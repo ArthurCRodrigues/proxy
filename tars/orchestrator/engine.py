@@ -1,0 +1,157 @@
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Awaitable, Callable
+
+from tars.copilot.bridge import CopilotBridge
+from tars.observability.logger import get_logger
+from tars.orchestrator.event_bus import EventBus
+from tars.orchestrator.state_machine import (
+    InvalidTransitionError,
+    OrchestratorContext,
+    apply_event,
+)
+from tars.types import AssistantState, Event, EventType
+
+
+class Orchestrator:
+    def __init__(
+        self,
+        event_bus: EventBus,
+        on_wake: Callable[[], Awaitable[None]] | None = None,
+        copilot_bridge: CopilotBridge | None = None,
+    ) -> None:
+        self._event_bus = event_bus
+        self._ctx = OrchestratorContext()
+        self._logger = get_logger("tars.orchestrator")
+        self._running = False
+        self._on_wake = on_wake
+        self._copilot = copilot_bridge
+        self._listening_timeout_task: asyncio.Task[None] | None = None
+        self._listening_timeout_ms = 10_000
+
+    def set_listening_timeout(self, timeout_ms: int) -> None:
+        self._listening_timeout_ms = max(0, timeout_ms)
+
+    @property
+    def context(self) -> OrchestratorContext:
+        return self._ctx
+
+    async def handle_event(self, event: Event) -> None:
+        if (
+            event.turn_id is not None
+            and event.turn_id != self._ctx.turn_id
+            and event.type in (EventType.ASSISTANT_PARTIAL, EventType.ASSISTANT_FINAL, EventType.SESSION_EXIT)
+        ):
+            self._logger.debug(
+                "Dropping stale event: type=%s event_turn=%s active_turn=%s",
+                event.type,
+                event.turn_id,
+                self._ctx.turn_id,
+            )
+            return
+
+        previous_state = self._ctx.state
+        try:
+            new_ctx = apply_event(self._ctx, event)
+        except InvalidTransitionError as exc:
+            self._logger.debug(
+                "Ignoring invalid transition: state=%s event=%s reason=%s",
+                previous_state,
+                event.type,
+                exc,
+            )
+            return
+        if new_ctx.state != previous_state:
+            self._logger.info(
+                "State transition: %s -> %s (event=%s)",
+                previous_state,
+                new_ctx.state,
+                event.type,
+            )
+        else:
+            self._logger.debug(
+                "State unchanged: %s (event=%s)",
+                previous_state,
+                event.type,
+            )
+        self._ctx = new_ctx
+        if previous_state != new_ctx.state:
+            self._on_state_change(previous_state, new_ctx.state)
+        elif (
+            new_ctx.state == AssistantState.LISTENING
+            and event.type in (EventType.USER_SPEECH_START, EventType.USER_SPEECH_END, EventType.USER_PARTIAL)
+        ):
+            # Listening timeout tracks inactivity, so speech activity refreshes it.
+            self._arm_listening_timeout()
+        if event.type == EventType.WAKE:
+            if self._on_wake is not None:
+                await self._on_wake()
+            await self._event_bus.publish(
+                Event(
+                    type=EventType.READY,
+                    session_id=self._ctx.session_id,
+                    turn_id=self._ctx.turn_id,
+                )
+            )
+        if event.type == EventType.USER_FINAL and self._copilot is not None:
+            text = str(event.payload.get("text", "")).strip()
+            if text:
+                await self._copilot.send_user_turn(text, turn_id=self._ctx.turn_id)
+        if event.type == EventType.ASSISTANT_FINAL and self._copilot is not None:
+            status = str(event.payload.get("status", "handoff")).strip().lower()
+            if status == "working":
+                await self._event_bus.publish(
+                    Event(
+                        type=EventType.CONTINUE_TURN,
+                        session_id=self._ctx.session_id,
+                        turn_id=self._ctx.turn_id,
+                    )
+                )
+        if event.type == EventType.CONTINUE_TURN and self._copilot is not None:
+            await self._copilot.send_user_turn(
+                "Continue working on the same request. "
+                "Only hand off when the task is fully completed.",
+                turn_id=self._ctx.turn_id,
+            )
+        if event.type == EventType.BARGE_IN and self._copilot is not None:
+            await self._copilot.interrupt_turn()
+
+    def _on_state_change(self, previous: AssistantState, new: AssistantState) -> None:
+        if new == AssistantState.LISTENING:
+            self._arm_listening_timeout()
+        elif previous == AssistantState.LISTENING:
+            self._cancel_listening_timeout()
+
+    def _arm_listening_timeout(self) -> None:
+        self._cancel_listening_timeout()
+        if self._listening_timeout_ms <= 0:
+            return
+        self._listening_timeout_task = asyncio.create_task(self._listening_timeout_worker())
+
+    def _cancel_listening_timeout(self) -> None:
+        task = self._listening_timeout_task
+        if task is not None and not task.done():
+            task.cancel()
+        self._listening_timeout_task = None
+
+    async def _listening_timeout_worker(self) -> None:
+        try:
+            await asyncio.sleep(self._listening_timeout_ms / 1000.0)
+            await self._event_bus.publish(Event(type=EventType.LISTENING_TIMEOUT))
+        except asyncio.CancelledError:
+            return
+
+    async def run(self) -> None:
+        self._running = True
+        while self._running and self._ctx.state != AssistantState.STOPPED:
+            event = await self._event_bus.next_event()
+            try:
+                await self.handle_event(event)
+            finally:
+                self._event_bus.task_done()
+            await asyncio.sleep(0)
+
+    def stop(self) -> None:
+        self._running = False
+        self._cancel_listening_timeout()

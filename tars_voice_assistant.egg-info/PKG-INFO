@@ -1,0 +1,198 @@
+Metadata-Version: 2.4
+Name: tars-voice-assistant
+Version: 0.1.0
+Summary: Wake-word voice orchestrator for Copilot CLI coding sessions.
+Author: TARS Project
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: numpy>=1.26.0
+Requires-Dist: sounddevice>=0.4.7
+Requires-Dist: vosk>=0.3.45
+Requires-Dist: websockets>=12.0
+Requires-Dist: elevenlabs>=1.7.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0.0; extra == "dev"
+
+# TARS
+
+TARS is a Python-based voice orchestrator for wake-word-triggered Copilot CLI sessions.
+
+## Current status
+
+This repository currently implements:
+
+- Project scaffold and configuration loading
+- Canonical event definitions
+- Async event bus
+- Deterministic state machine
+- Orchestrator core loop with session/turn tracking
+- Audio foundation:
+  - local WAV asset loading (`assets/yes.wav`)
+  - cancellable PCM playback pipeline
+  - microphone capture abstraction with chunk queue
+- Phase 3 base:
+  - local wake-word detection via Vosk
+  - RMS-based VAD start/end events
+  - wake callback that plays random wake audio
+- Phase 4 base:
+  - Deepgram streaming STT adapter (partial/final transcripts)
+  - utterance finalization trigger on VAD end
+  - reconnect logic with bounded backoff
+- Phase 5 base:
+  - Copilot bridge for prompt execution in JSON output mode
+  - assistant token/final event parsing (`ASSISTANT_PARTIAL` / `ASSISTANT_FINAL`)
+  - standby session pool activation/rollover hooks
+- Unit tests for state transitions and event dispatch
+
+## Quick start
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env
+python -m tars.main
+```
+
+Running `python -m tars.main` starts microphone listening with local wake-word detection.
+
+If `assets/wake/*.wav` exists, TARS randomly picks one wake sound per activation.
+If none exist, it falls back to `assets/yes.wav`.
+
+## Vosk model setup (required for wake detection)
+
+Download a Vosk English model and extract it to:
+
+`assets/models/vosk-model-small-en-us-0.15`
+
+You can also set a custom path via `TARS_VOSK_MODEL_PATH`.
+
+## Wake troubleshooting
+
+If wake is not triggering:
+
+- Set microphone explicitly with `TARS_AUDIO_INPUT_DEVICE` (index or device name).
+- Add phonetic aliases with `TARS_WAKE_ALIASES` (default: `tars,stars,tarz`).
+- Enable transcript debug with `TARS_WAKE_DEBUG_TRANSCRIPTS=1` and `TARS_LOG_LEVEL=DEBUG`.
+- Keep RMS logging off by default (`TARS_WAKE_DEBUG_RMS=0`) to avoid terminal noise.
+- Wake retrigger cooldown is configurable (`TARS_WAKE_RETRIGGER_COOLDOWN_MS`).
+
+## Deepgram STT notes
+
+Deepgram requires `DEEPGRAM_API_KEY` in `.env`.
+The adapter emits partial/final transcripts into event bus as `USER_PARTIAL`/`USER_FINAL`.
+
+For long pauses (for example, ~3s between phrases), tune:
+
+- `TARS_DEEPGRAM_ENDPOINTING_ENABLED=1` and `TARS_DEEPGRAM_ENDPOINTING_MS=3000-3500`, or disable endpointing with `TARS_DEEPGRAM_ENDPOINTING_ENABLED=0`
+- `TARS_DEEPGRAM_UTTERANCE_END_MS=3500`
+- `TARS_DEEPGRAM_PUNCTUATE=1`
+- `TARS_DEEPGRAM_SMART_FORMAT=1`
+
+For code/repo domain biasing on `nova-3`, add `TARS_DEEPGRAM_KEYTERMS` as a comma-separated list.
+Recommended starter list for this setup:
+
+`prisma-infrastructure,api-grader-prisma,app-grader-prisma,autograder,prisma backend,prisma frontend,pull request,draft PR,GitHub issue`
+
+To reduce self-transcription (assistant audio captured by mic), TARS includes:
+
+- STT gate (`TARS_STT_GATE_ENABLED`, `TARS_STT_GATE_HOLD_MS`)
+- de-echo filter (`TARS_STT_DEECHO_ENABLED`, `TARS_STT_DEECHO_SIMILARITY_THRESHOLD`)
+- state-based STT upstream gating: Deepgram audio is only forwarded while state is `LISTENING`
+
+## Copilot bridge notes
+
+Copilot execution is launched via:
+
+- `TARS_COPILOT_COMMAND` (default `copilot`)
+- `TARS_COPILOT_MODEL` (optional)
+- `TARS_COPILOT_ALLOW_ALL` (default enabled)
+
+Each finalized user transcript is sent as a non-interactive prompt with session resume:
+
+- `copilot --resume=<session-id> -p ... --output-format json`
+
+This keeps Copilot context persistent across turns by default.
+`ASSISTANT_FINAL` now means "turn complete", not "session ended".
+Assistant deltas/final outputs are mapped into internal events for downstream TTS integration.
+
+Voice command: saying `start new session` (also `new session`, `reset session`, `fresh session`)
+resets Copilot context and creates a fresh active session.
+
+Current routing behavior:
+
+- STT final transcripts are only accepted while state is `LISTENING`.
+- When accepted, `USER_FINAL` transitions orchestrator to `THINKING`.
+- Copilot bridge sends `ASSISTANT_PARTIAL` and `ASSISTANT_FINAL` events.
+- Copilot events are tagged with `session_id` + `turn_id`; stale turn events are dropped.
+- `ASSISTANT_FINAL` returns state to `IDLE` (from `THINKING` or `SPEAKING`).
+
+## Assistant speech output (Phase 6)
+
+TARS now speaks assistant responses with ElevenLabs:
+
+- `ASSISTANT_PARTIAL` text is buffered and split into speakable segments
+- segments are synthesized with ElevenLabs and played through the local playback engine
+- `ASSISTANT_FINAL` flushes any remaining text in the buffer
+
+Current ElevenLabs requirements:
+
+- `ELEVENLABS_API_KEY`
+- `ELEVENLABS_VOICE_ID`
+
+## State machine behavior (runtime contract)
+
+States:
+
+- `IDLE`
+- `WAKE_DETECTED`
+- `LISTENING`
+- `THINKING`
+- `SPEAKING`
+- `INTERRUPTING`
+- `STOPPED`
+
+What happens in each state:
+
+- `IDLE`
+  - Wake detector is active.
+  - Wake phrase match emits `WAKE`.
+
+- `WAKE_DETECTED`
+  - Orchestrator invokes wake callback.
+  - Wake sound plays.
+  - `READY` is emitted automatically.
+
+- `LISTENING`
+  - Wake detection is logically gated off (no retrigger while active turn/session is running).
+  - VAD and STT continue capturing user speech.
+  - `USER_FINAL` moves to `THINKING`.
+
+- `THINKING`
+  - Reserved for assistant processing (Copilot bridge phase).
+  - `BARGE_IN` can move to `INTERRUPTING`.
+
+- `SPEAKING`
+  - Reserved for assistant audio output phase.
+  - `BARGE_IN` can move to `INTERRUPTING`.
+  - `ASSISTANT_FINAL` returns to `IDLE`.
+
+- `INTERRUPTING`
+  - Reserved for cancellation path.
+  - `INTERRUPT_ACK` returns to `LISTENING`.
+
+- `STOPPED`
+  - Terminal state after `STOP`.
+
+Important details:
+
+- Wake detection is evaluated only when runtime state gate allows it (`IDLE`).
+- When state is not `IDLE`, wake recognizer checks are fully skipped (not merely ignored after match).
+- A retrigger cooldown (`TARS_WAKE_RETRIGGER_COOLDOWN_MS`) prevents rapid duplicate wakes.
+- STT gate + de-echo run in parallel to reduce assistant self-capture.
+
+## Run tests
+
+```bash
+pytest -q
+```
