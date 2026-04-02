@@ -41,6 +41,26 @@ python -m tars.main
 
 Running `python -m tars.main` starts microphone listening with local wake-word detection.
 
+## Copilot latency benchmark (classic vs ACP warm process)
+
+Run:
+
+```bash
+python benchmark_copilot_latency.py --runs 5
+```
+
+What it measures:
+
+- **Classic:** starts timer at command launch and stops when `copilot -p ...` exits.
+- **ACP warm:** starts Copilot ACP once (not timed), then starts timer exactly when `session/prompt` is sent and stops on the matching `session/prompt` response.
+
+Useful flags:
+
+- `--prompt "your prompt here"`
+- `--model <model>`
+- `--fresh-acp-session-per-run` (new ACP session each run, same warm ACP process)
+- `--json` (machine-readable output)
+
 If `assets/wake/*.wav` exists, TARS randomly picks one wake sound per activation.
 If none exist, it falls back to `assets/yes.wav`.
 
@@ -93,6 +113,9 @@ Copilot execution is launched via:
 - `TARS_COPILOT_MODEL` (optional)
 - `TARS_COPILOT_ALLOW_ALL` (default enabled)
 - `TARS_COPILOT_ENABLE_FINAL_CONTRACT` (default enabled)
+- `TARS_COPILOT_USE_ACP` (default enabled; warm persistent process mode)
+
+On startup, TARS prewarms a standby Copilot session so the first wake/prompt can reuse an already running ACP process.
 
 Each finalized user transcript is sent as a non-interactive prompt with session resume:
 
@@ -131,6 +154,7 @@ TARS now speaks assistant responses with ElevenLabs:
 - `ASSISTANT_PARTIAL` text is buffered and split into speakable segments
 - segments are synthesized with ElevenLabs and played through the local playback engine
 - `ASSISTANT_FINAL` flushes any remaining text in the buffer
+- when partial speech is enabled, already-spoken partial text is not replayed on final
 
 Current ElevenLabs requirements:
 
@@ -145,6 +169,9 @@ Current ElevenLabs requirements:
   - `TARS_ELEVENLABS_STYLE` (default: `0.25`)
   - `TARS_ELEVENLABS_SPEED` (default: `0.95`)
   - `TARS_ELEVENLABS_USE_SPEAKER_BOOST` (default: `1`)
+  - `TARS_TTS_SPEAK_PARTIALS` (default: `1`)
+  - `TARS_TTS_PARTIAL_MIN_CHARS` (default: `12`)
+  - `TARS_TTS_PARTIAL_FORCE_FLUSH_CHARS` (default: `72`)
 
 ## State machine behavior (runtime contract)
 

@@ -79,7 +79,10 @@ class Settings:
     copilot_bootstrap_instructions: bool = True
     copilot_instructions_path: str = "~/.copilot/copilot-instructions.md"
     copilot_enable_final_contract: bool = True
+    copilot_use_acp: bool = True
     tts_speak_partials: bool = True
+    tts_partial_min_chars: int = 12
+    tts_partial_force_flush_chars: int = 72
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -166,6 +169,13 @@ class Settings:
             ),
             copilot_enable_final_contract=os.getenv("TARS_COPILOT_ENABLE_FINAL_CONTRACT", "1")
             in ("1", "true", "True"),
+            copilot_use_acp=os.getenv("TARS_COPILOT_USE_ACP", "1")
+            in ("1", "true", "True"),
             tts_speak_partials=os.getenv("TARS_TTS_SPEAK_PARTIALS", "1")
             in ("1", "true", "True"),
+            tts_partial_min_chars=max(1, int(os.getenv("TARS_TTS_PARTIAL_MIN_CHARS", "12"))),
+            tts_partial_force_flush_chars=max(
+                1,
+                int(os.getenv("TARS_TTS_PARTIAL_FORCE_FLUSH_CHARS", "72")),
+            ),
         )

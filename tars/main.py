@@ -16,7 +16,7 @@ from tars.orchestrator.engine import Orchestrator
 from tars.orchestrator.event_bus import EventBus
 from tars.stt.deepgram_adapter import DeepgramSTTAdapter
 from tars.stt.filtering import EchoFilter, SpeechGate
-from tars.tts.chunking import append_partial, merge_final, split_speakable_segments
+from tars.tts.chunking import append_partial, consume_speakable_segments, merge_final, split_speakable_segments
 from tars.tts.elevenlabs_adapter import ElevenLabsTTSAdapter
 from tars.types import AssistantState, Event, EventType
 
@@ -91,6 +91,7 @@ async def _run() -> None:
     tts_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=64)
     tts_task: asyncio.Task[None] | None = None
     tts_text_buffer = ""
+    tts_spoken_cursor = 0
     cancel_commands = _parse_cancel_commands(settings.cancel_commands)
 
     def _allow_stt_audio_forward() -> bool:
@@ -140,14 +141,20 @@ async def _run() -> None:
         asyncio.create_task(bus.publish(Event(type=EventType.USER_FINAL, payload={"text": text})))
 
     def _on_assistant_partial(text: str) -> None:
-        nonlocal tts_text_buffer
+        nonlocal tts_text_buffer, tts_spoken_cursor
         if text:
             echo_filter.record_assistant_text(text)
             logger.info("COPILOT_PARTIAL: %s", text)
             if not settings.tts_speak_partials:
                 return
             tts_text_buffer = append_partial(tts_text_buffer, text)
-            segments, tts_text_buffer = split_speakable_segments(tts_text_buffer, force=False)
+            segments, tts_text_buffer, consumed = consume_speakable_segments(
+                tts_text_buffer,
+                force=False,
+                min_chars=settings.tts_partial_min_chars,
+                force_flush_chars=settings.tts_partial_force_flush_chars,
+            )
+            tts_spoken_cursor += consumed
             for segment in segments:
                 try:
                     tts_queue.put_nowait(segment)
@@ -155,12 +162,17 @@ async def _run() -> None:
                     logger.debug("TTS queue full; dropping partial chunk")
 
     def _on_assistant_final(text: str) -> None:
-        nonlocal tts_text_buffer
+        nonlocal tts_text_buffer, tts_spoken_cursor
         if text:
             echo_filter.record_assistant_text(text)
             logger.info("COPILOT_FINAL: %s", text)
-            tts_text_buffer = merge_final(tts_text_buffer, text)
+            final_delta = text[tts_spoken_cursor:] if tts_spoken_cursor < len(text) else ""
+            if final_delta:
+                tts_text_buffer = merge_final(tts_text_buffer, final_delta)
+            elif not settings.tts_speak_partials:
+                tts_text_buffer = merge_final(tts_text_buffer, text)
             segments, tts_text_buffer = split_speakable_segments(tts_text_buffer, force=True)
+            tts_spoken_cursor = 0
             for segment in segments:
                 try:
                     tts_queue.put_nowait(segment)
@@ -207,6 +219,7 @@ async def _run() -> None:
         bootstrap_instructions=settings.copilot_bootstrap_instructions,
         instructions_path=settings.copilot_instructions_path,
         enable_final_contract=settings.copilot_enable_final_contract,
+        use_acp=settings.copilot_use_acp,
         on_session_exit=_on_copilot_session_exit,
         on_assistant_partial=_on_assistant_partial,
         on_assistant_final=_on_assistant_final,
@@ -228,6 +241,8 @@ async def _run() -> None:
     runner = asyncio.create_task(orchestrator.run())
 
     try:
+        await session_pool.ensure_standby()
+        logger.info("Copilot standby session prewarmed at startup")
         wake_vad = WakeVadEngine(
             event_bus=bus,
             audio_io=audio_io,
@@ -248,7 +263,6 @@ async def _run() -> None:
             stt_gate_allow=_allow_stt_audio_forward,
         )
         await wake_vad.start()
-        await session_pool.ensure_standby()
         logger.info(
             "TARS listening for wake phrases '%s' (input_device=%s resolved=%s)",
             settings.wake_aliases,
