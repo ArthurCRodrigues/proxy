@@ -35,11 +35,32 @@ def split_speakable_segments(
     *,
     force: bool,
     min_chars: int = 24,
+    force_flush_chars: int = 120,
 ) -> tuple[list[str], str]:
+    segments, rest, _consumed = consume_speakable_segments(
+        buffer,
+        force=force,
+        min_chars=min_chars,
+        force_flush_chars=force_flush_chars,
+    )
+    return segments, rest
+
+
+def consume_speakable_segments(
+    buffer: str,
+    *,
+    force: bool,
+    min_chars: int = 24,
+    force_flush_chars: int = 120,
+) -> tuple[list[str], str, int]:
     text = buffer
     segments: list[str] = []
     while True:
-        boundary = _find_boundary(text, min_chars=min_chars)
+        boundary = _find_boundary(
+            text,
+            min_chars=min_chars,
+            force_flush_chars=force_flush_chars,
+        )
         if boundary is None:
             break
         segment = text[:boundary].strip()
@@ -49,18 +70,19 @@ def split_speakable_segments(
 
     if force and text.strip():
         segments.append(text.strip())
-        text = ""
-    return segments, text
+        return segments, "", len(buffer)
+    consumed_chars = len(buffer) - len(text)
+    return segments, text, consumed_chars
 
 
-def _find_boundary(text: str, *, min_chars: int) -> int | None:
+def _find_boundary(text: str, *, min_chars: int, force_flush_chars: int) -> int | None:
     if len(text) < min_chars:
         return None
     for match in _BOUNDARY_PATTERN.finditer(text):
         idx = match.end()
         if idx >= min_chars:
             return idx
-    if len(text) >= max(min_chars * 2, 120):
+    if len(text) >= max(min_chars * 2, force_flush_chars):
         return len(text)
     return None
 
