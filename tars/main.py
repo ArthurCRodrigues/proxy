@@ -91,7 +91,7 @@ async def _run() -> None:
     tts_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=64)
     tts_task: asyncio.Task[None] | None = None
     tts_text_buffer = ""
-    tts_spoken_cursor = 0
+    tts_partial_seen_since_final = False
     cancel_commands = _parse_cancel_commands(settings.cancel_commands)
 
     def _allow_stt_audio_forward() -> bool:
@@ -141,20 +141,20 @@ async def _run() -> None:
         asyncio.create_task(bus.publish(Event(type=EventType.USER_FINAL, payload={"text": text})))
 
     def _on_assistant_partial(text: str) -> None:
-        nonlocal tts_text_buffer, tts_spoken_cursor
+        nonlocal tts_text_buffer, tts_partial_seen_since_final
         if text:
             echo_filter.record_assistant_text(text)
             logger.info("COPILOT_PARTIAL: %s", text)
             if not settings.tts_speak_partials:
                 return
+            tts_partial_seen_since_final = True
             tts_text_buffer = append_partial(tts_text_buffer, text)
-            segments, tts_text_buffer, consumed = consume_speakable_segments(
+            segments, tts_text_buffer, _consumed = consume_speakable_segments(
                 tts_text_buffer,
                 force=False,
                 min_chars=settings.tts_partial_min_chars,
                 force_flush_chars=settings.tts_partial_force_flush_chars,
             )
-            tts_spoken_cursor += consumed
             for segment in segments:
                 try:
                     tts_queue.put_nowait(segment)
@@ -162,17 +162,24 @@ async def _run() -> None:
                     logger.debug("TTS queue full; dropping partial chunk")
 
     def _on_assistant_final(text: str) -> None:
-        nonlocal tts_text_buffer, tts_spoken_cursor
+        nonlocal tts_text_buffer, tts_partial_seen_since_final
         if text:
             echo_filter.record_assistant_text(text)
             logger.info("COPILOT_FINAL: %s", text)
-            final_delta = text[tts_spoken_cursor:] if tts_spoken_cursor < len(text) else ""
-            if final_delta:
-                tts_text_buffer = merge_final(tts_text_buffer, final_delta)
-            elif not settings.tts_speak_partials:
+            if settings.tts_speak_partials and tts_partial_seen_since_final:
+                segments, tts_text_buffer = split_speakable_segments(
+                    tts_text_buffer,
+                    force=True,
+                    force_flush_chars=settings.tts_partial_force_flush_chars,
+                )
+            else:
                 tts_text_buffer = merge_final(tts_text_buffer, text)
-            segments, tts_text_buffer = split_speakable_segments(tts_text_buffer, force=True)
-            tts_spoken_cursor = 0
+                segments, tts_text_buffer = split_speakable_segments(
+                    tts_text_buffer,
+                    force=True,
+                    force_flush_chars=settings.tts_partial_force_flush_chars,
+                )
+            tts_partial_seen_since_final = False
             for segment in segments:
                 try:
                     tts_queue.put_nowait(segment)
@@ -218,7 +225,6 @@ async def _run() -> None:
         allow_all=settings.copilot_allow_all,
         bootstrap_instructions=settings.copilot_bootstrap_instructions,
         instructions_path=settings.copilot_instructions_path,
-        enable_final_contract=settings.copilot_enable_final_contract,
         use_acp=settings.copilot_use_acp,
         on_session_exit=_on_copilot_session_exit,
         on_assistant_partial=_on_assistant_partial,

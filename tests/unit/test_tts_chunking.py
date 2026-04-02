@@ -48,6 +48,18 @@ def test_split_speakable_segments_force_flush_chars_tuning() -> None:
     assert rest == ""
 
 
+def test_split_speakable_segments_no_force_flush_when_disabled() -> None:
+    text = "A" * 200
+    segments, rest = split_speakable_segments(
+        text,
+        force=False,
+        min_chars=10,
+        force_flush_chars=0,
+    )
+    assert segments == []
+    assert rest == text
+
+
 def test_merge_final_prefers_buffer_when_final_subset() -> None:
     merged = merge_final(
         "I need you to answer me through the eleven labs mcp",

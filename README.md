@@ -112,7 +112,6 @@ Copilot execution is launched via:
 - `TARS_COPILOT_COMMAND` (default `copilot`)
 - `TARS_COPILOT_MODEL` (optional)
 - `TARS_COPILOT_ALLOW_ALL` (default enabled)
-- `TARS_COPILOT_ENABLE_FINAL_CONTRACT` (default enabled)
 - `TARS_COPILOT_USE_ACP` (default enabled; warm persistent process mode)
 
 On startup, TARS prewarms a standby Copilot session so the first wake/prompt can reuse an already running ACP process.
@@ -125,16 +124,6 @@ This keeps Copilot context persistent across turns by default.
 `ASSISTANT_FINAL` now means "turn complete", not "session ended".
 Assistant deltas/final outputs are mapped into internal events for downstream TTS integration.
 
-When final contract mode is enabled, bootstrap instructions require a last-line JSON object in each final message:
-
-- `{"tars_status":"working","spoken":"..."}`
-- `{"tars_status":"handoff","spoken":"..."}`
-
-Behavior:
-
-- `working`: TARS keeps control and auto-sends a continuation turn in the same Copilot session.
-- `handoff`: TARS returns control back to user listening flow.
-
 Voice command: saying `start new session` (also `new session`, `reset session`, `fresh session`)
 resets Copilot context and creates a fresh active session.
 
@@ -144,8 +133,7 @@ Current routing behavior:
 - When accepted, `USER_FINAL` transitions orchestrator to `THINKING`.
 - Copilot bridge sends `ASSISTANT_PARTIAL` and `ASSISTANT_FINAL` events.
 - Copilot events are tagged with `session_id` + `turn_id`; stale turn events are dropped.
-- `ASSISTANT_FINAL` with status `working` stays active and continues the same turn.
-- `ASSISTANT_FINAL` with status `handoff` returns state to `IDLE`.
+- `ASSISTANT_FINAL` returns state to `IDLE`.
 
 ## Assistant speech output (Phase 6)
 

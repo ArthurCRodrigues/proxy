@@ -95,24 +95,9 @@ def test_cancel_returns_to_idle_without_thinking() -> None:
     assert out.session_id is None
     assert out.turn_id is None
 
-
-def test_assistant_final_working_stays_active() -> None:
+def test_assistant_final_returns_to_idle() -> None:
     ctx = OrchestratorContext(state=AssistantState.THINKING, session_id="s", turn_id="t")
-    out = apply_event(
-        ctx,
-        Event(type=EventType.ASSISTANT_FINAL, payload={"status": "working"}),
-    )
-    assert out.state == AssistantState.THINKING
-    assert out.session_id == "s"
-    assert out.turn_id == "t"
-
-
-def test_assistant_final_without_contract_hands_off_to_idle() -> None:
-    ctx = OrchestratorContext(state=AssistantState.THINKING, session_id="s", turn_id="t")
-    out = apply_event(
-        ctx,
-        Event(type=EventType.ASSISTANT_FINAL, payload={"status": "handoff", "contract_detected": False}),
-    )
+    out = apply_event(ctx, Event(type=EventType.ASSISTANT_FINAL))
     assert out.state == AssistantState.IDLE
     assert out.session_id is None
     assert out.turn_id is None

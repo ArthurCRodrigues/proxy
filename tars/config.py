@@ -23,6 +23,10 @@ def _parse_csv(value: str) -> tuple[str, ...]:
     return tuple(part.strip() for part in value.split(",") if part.strip())
 
 
+def _default_copilot_instructions_path() -> str:
+    return str(Path(__file__).resolve().parent.parent / "copilot-instructions.md")
+
+
 @dataclass(frozen=True)
 class Settings:
     deepgram_api_key: str
@@ -77,8 +81,7 @@ class Settings:
     copilot_model: str = ""
     copilot_allow_all: bool = True
     copilot_bootstrap_instructions: bool = True
-    copilot_instructions_path: str = "~/.copilot/copilot-instructions.md"
-    copilot_enable_final_contract: bool = True
+    copilot_instructions_path: str = _default_copilot_instructions_path()
     copilot_use_acp: bool = True
     tts_speak_partials: bool = True
     tts_partial_min_chars: int = 12
@@ -87,6 +90,13 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         _load_dotenv()
+        copilot_instructions_path = os.getenv("TARS_COPILOT_INSTRUCTIONS_PATH")
+        if (
+            copilot_instructions_path is None
+            or copilot_instructions_path.strip() == ""
+            or copilot_instructions_path.strip() == "~/.copilot/copilot-instructions.md"
+        ):
+            copilot_instructions_path = _default_copilot_instructions_path()
         return cls(
             deepgram_api_key=os.getenv("DEEPGRAM_API_KEY", ""),
             elevenlabs_api_key=os.getenv("ELEVENLABS_API_KEY", ""),
@@ -163,19 +173,14 @@ class Settings:
                 "TARS_COPILOT_BOOTSTRAP_INSTRUCTIONS", "1"
             )
             in ("1", "true", "True"),
-            copilot_instructions_path=os.getenv(
-                "TARS_COPILOT_INSTRUCTIONS_PATH",
-                "~/.copilot/copilot-instructions.md",
-            ),
-            copilot_enable_final_contract=os.getenv("TARS_COPILOT_ENABLE_FINAL_CONTRACT", "1")
-            in ("1", "true", "True"),
+            copilot_instructions_path=copilot_instructions_path,
             copilot_use_acp=os.getenv("TARS_COPILOT_USE_ACP", "1")
             in ("1", "true", "True"),
             tts_speak_partials=os.getenv("TARS_TTS_SPEAK_PARTIALS", "1")
             in ("1", "true", "True"),
             tts_partial_min_chars=max(1, int(os.getenv("TARS_TTS_PARTIAL_MIN_CHARS", "12"))),
             tts_partial_force_flush_chars=max(
-                1,
+                0,
                 int(os.getenv("TARS_TTS_PARTIAL_FORCE_FLUSH_CHARS", "72")),
             ),
         )

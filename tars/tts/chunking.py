@@ -82,7 +82,7 @@ def _find_boundary(text: str, *, min_chars: int, force_flush_chars: int) -> int 
         idx = match.end()
         if idx >= min_chars:
             return idx
-    if len(text) >= max(min_chars * 2, force_flush_chars):
+    if force_flush_chars > 0 and len(text) >= max(min_chars * 2, force_flush_chars):
         return len(text)
     return None
 

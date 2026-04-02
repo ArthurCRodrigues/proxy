@@ -98,22 +98,6 @@ class Orchestrator:
             text = str(event.payload.get("text", "")).strip()
             if text:
                 await self._copilot.send_user_turn(text, turn_id=self._ctx.turn_id)
-        if event.type == EventType.ASSISTANT_FINAL and self._copilot is not None:
-            status = str(event.payload.get("status", "handoff")).strip().lower()
-            if status == "working":
-                await self._event_bus.publish(
-                    Event(
-                        type=EventType.CONTINUE_TURN,
-                        session_id=self._ctx.session_id,
-                        turn_id=self._ctx.turn_id,
-                    )
-                )
-        if event.type == EventType.CONTINUE_TURN and self._copilot is not None:
-            await self._copilot.send_user_turn(
-                "Continue working on the same request. "
-                "Only hand off when the task is fully completed.",
-                turn_id=self._ctx.turn_id,
-            )
         if event.type == EventType.BARGE_IN and self._copilot is not None:
             await self._copilot.interrupt_turn()
 

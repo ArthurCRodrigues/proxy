@@ -34,7 +34,6 @@ def apply_event(ctx: OrchestratorContext, event: Event) -> OrchestratorContext:
         EventType.SESSION_EXIT,
         EventType.TOOL_START,
         EventType.TOOL_END,
-        EventType.CONTINUE_TURN,
     ):
         return ctx
     if event.type in (EventType.USER_SPEECH_START, EventType.USER_SPEECH_END, EventType.USER_PARTIAL):
@@ -77,13 +76,6 @@ def apply_event(ctx: OrchestratorContext, event: Event) -> OrchestratorContext:
 
     if state == AssistantState.THINKING:
         if event.type == EventType.ASSISTANT_FINAL:
-            status = str(event.payload.get("status", "handoff")).strip().lower()
-            if status == "working":
-                return OrchestratorContext(
-                    state=AssistantState.THINKING,
-                    session_id=ctx.session_id,
-                    turn_id=ctx.turn_id,
-                )
             return OrchestratorContext(
                 state=AssistantState.IDLE,
                 session_id=None,
@@ -107,13 +99,6 @@ def apply_event(ctx: OrchestratorContext, event: Event) -> OrchestratorContext:
         if event.type == EventType.ASSISTANT_PARTIAL:
             return ctx
         if event.type == EventType.ASSISTANT_FINAL:
-            status = str(event.payload.get("status", "handoff")).strip().lower()
-            if status == "working":
-                return OrchestratorContext(
-                    state=AssistantState.THINKING,
-                    session_id=ctx.session_id,
-                    turn_id=ctx.turn_id,
-                )
             return OrchestratorContext(
                 state=AssistantState.IDLE,
                 session_id=None,

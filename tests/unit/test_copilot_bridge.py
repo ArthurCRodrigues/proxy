@@ -48,7 +48,6 @@ def test_bridge_bootstrap_instructions_wrap_prompt(tmp_path: Path) -> None:
     wrapped = bridge._with_bootstrap_instructions("Fix issue 123", include_bootstrap=True)
     assert "System bootstrap instructions:" in wrapped
     assert "Speak concise." in wrapped
-    assert "Output contract for assistant.message final:" in wrapped
     assert "User request (verbatim STT):" in wrapped
     assert wrapped.endswith("Fix issue 123")
 
@@ -128,20 +127,18 @@ def test_bridge_acp_prompt_state_accumulates_text() -> None:
     asyncio.run(_run())
 
 
-def test_emit_assistant_final_forces_handoff_when_contract_missing() -> None:
+def test_emit_assistant_final_publishes_text_payload() -> None:
     async def _run() -> None:
         bus = EventBus()
         bridge = CopilotBridge(
             event_bus=bus,
-            enable_final_contract=True,
             bootstrap_instructions=False,
             use_acp=False,
         )
         await bridge._emit_assistant_final("s1", "t1", "Plain text without contract")
         event = await bus.next_event()
         assert event.type == EventType.ASSISTANT_FINAL
-        assert event.payload.get("contract_detected") is False
-        assert event.payload.get("status") == "handoff"
+        assert event.payload == {"text": "Plain text without contract"}
         bus.task_done()
 
     asyncio.run(_run())

@@ -8,11 +8,14 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from uuid import uuid4
 
-from tars.copilot.contract import parse_assistant_final_contract
 from tars.copilot.parser import parse_jsonl_event
 from tars.observability.logger import get_logger
 from tars.orchestrator.event_bus import EventBus
 from tars.types import Event, EventType
+
+
+def _default_instructions_path() -> str:
+    return str(Path(__file__).resolve().parents[2] / "copilot-instructions.md")
 
 
 @dataclass
@@ -35,8 +38,7 @@ class CopilotBridge:
         model: str = "",
         allow_all: bool = True,
         bootstrap_instructions: bool = True,
-        instructions_path: str = "~/.copilot/copilot-instructions.md",
-        enable_final_contract: bool = True,
+        instructions_path: str = _default_instructions_path(),
         use_acp: bool = True,
         on_session_exit: Callable[[str, int], Awaitable[None]] | None = None,
         on_assistant_partial: Callable[[str], None] | None = None,
@@ -48,7 +50,6 @@ class CopilotBridge:
         self._allow_all = allow_all
         self._bootstrap_instructions = bootstrap_instructions
         self._instructions_path = instructions_path
-        self._enable_final_contract = enable_final_contract
         self._use_acp = use_acp
         self._logger = get_logger("tars.copilot.bridge")
         self._active_task: asyncio.Task[None] | None = None
@@ -425,27 +426,7 @@ class CopilotBridge:
         turn_id: str | None,
         raw_text: str,
     ) -> None:
-        contract = parse_assistant_final_contract(raw_text)
-        if self._enable_final_contract:
-            final_text = contract.spoken_text
-            final_raw = contract.raw_text
-            if contract.contract_detected:
-                final_status = contract.status
-                contract_detected = True
-            else:
-                # Contract is mandatory in this mode; force handoff on malformed/missing contract.
-                final_status = "handoff"
-                contract_detected = False
-                self._logger.warning(
-                    "Assistant final missing contract; forcing handoff (session=%s turn=%s)",
-                    session_id,
-                    turn_id,
-                )
-        else:
-            final_text = raw_text
-            final_status = "handoff"
-            contract_detected = False
-            final_raw = raw_text
+        final_text = raw_text
         if self._on_assistant_final is not None and final_text:
             self._on_assistant_final(final_text)
         await self._event_bus.publish(
@@ -453,12 +434,7 @@ class CopilotBridge:
                 type=EventType.ASSISTANT_FINAL,
                 session_id=session_id,
                 turn_id=turn_id,
-                payload={
-                    "text": final_text,
-                    "status": final_status,
-                    "contract_detected": contract_detected,
-                    "raw_text": final_raw,
-                },
+                payload={"text": final_text},
             )
         )
 
@@ -666,22 +642,6 @@ class CopilotBridge:
                 path,
             )
             return prompt
-
-        if self._enable_final_contract:
-            contract_instructions = (
-                "Output contract for assistant.message final:\\n"
-                "- End your final message with a single-line JSON object only on the last line.\\n"
-                "- JSON schema: {\\\"tars_status\\\":\\\"working|handoff\\\",\\\"spoken\\\":\\\"<what to say out loud>\\\"}.\\n"
-                "- Use tars_status=working when you are still executing the same user request and expect to continue automatically.\\n"
-                "- Use tars_status=handoff when you are done and returning control to the user.\\n"
-                "- Keep spoken concise and natural for voice playback.\\n"
-                "- Do not wrap JSON in markdown fences."
-            )
-            return (
-                f"System bootstrap instructions:\\n{content}\\n\\n"
-                f"{contract_instructions}\\n\\n"
-                f"User request (verbatim STT):\\n{prompt}"
-            )
 
         return (
             f"System bootstrap instructions:\\n{content}\\n\\n"
