@@ -89,7 +89,7 @@ def test_partial_wake_match_disabled_by_default() -> None:
     assert engine._wake_match_partial is False
 
 
-def test_wake_state_boundary_resets_recognizer_and_vad() -> None:
+def test_wake_state_boundary_resets_recognizer() -> None:
     idle = True
     engine = WakeVadEngine(
         event_bus=None,  # type: ignore[arg-type]
@@ -107,13 +107,9 @@ def test_wake_state_boundary_resets_recognizer_and_vad() -> None:
         reset_count += 1
 
     engine._recognizer = SimpleNamespace(Reset=_reset)  # type: ignore[assignment]
-    engine._vad.speech_active = True
-    engine._vad.silence_ms = 100
 
     assert engine._wake_should_trigger() is True
     assert reset_count == 1
-    assert engine._vad.speech_active is False
-    assert engine._vad.silence_ms == 0
 
     idle = False
     assert engine._wake_should_trigger() is False

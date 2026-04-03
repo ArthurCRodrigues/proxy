@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 from proxy.stt.deepgram_adapter import (
     DeepgramSTTAdapter,
     _is_ws_open,
@@ -63,32 +61,17 @@ def test_url_supports_keyterms_and_disable_endpointing() -> None:
     assert "keyterm=GitHub+issue" in url
 
 
-def test_unsolicited_final_is_not_emitted_as_final() -> None:
+def test_is_final_emitted_directly() -> None:
     adapter = DeepgramSTTAdapter(api_key="k", sample_rate=16000)
-    partials: list[str] = []
     finals: list[str] = []
-    adapter.on_partial(partials.append)
     adapter.on_final(finals.append)
     adapter._handle_message(
         '{"type":"Results","is_final":true,"channel":{"alternatives":[{"transcript":"hello"}]}}'
     )
-    assert partials == ["hello"]
-    assert finals == []
+    assert finals == ["hello"]
 
 
-def test_finalize_requested_allows_final() -> None:
-    adapter = DeepgramSTTAdapter(api_key="k", sample_rate=16000)
-    adapter._ws = SimpleNamespace(send=lambda _x: None)  # type: ignore[assignment]
-    finals: list[str] = []
-    adapter.on_final(finals.append)
-    adapter._finalize_requested = True
-    adapter._handle_message(
-        '{"type":"Results","is_final":true,"channel":{"alternatives":[{"transcript":"done"}]}}'
-    )
-    assert finals == ["done"]
-
-
-def test_speech_final_allows_final_without_local_finalize_request() -> None:
+def test_speech_final_emitted_directly() -> None:
     adapter = DeepgramSTTAdapter(api_key="k", sample_rate=16000)
     finals: list[str] = []
     adapter.on_final(finals.append)
@@ -145,17 +128,3 @@ def test_merge_partial_utterance_without_overlap_appends() -> None:
 def test_token_overlap_count_detects_suffix_prefix_overlap() -> None:
     overlap = _token_overlap_count("alpha beta gamma delta", "gamma delta epsilon zeta")
     assert overlap == 2
-
-
-def test_unsolicited_final_accepts_when_assembled_superset_stable() -> None:
-    adapter = DeepgramSTTAdapter(api_key="k", sample_rate=16000, utterance_end_ms=1000)
-    finals: list[str] = []
-    adapter.on_final(finals.append)
-    adapter._handle_message(
-        '{"type":"Results","is_final":false,"channel":{"alternatives":[{"transcript":"and I just want you to answer me through an audio"}]}}'
-    )
-    adapter._last_partial_change_at -= 2.0
-    adapter._handle_message(
-        '{"type":"Results","is_final":true,"channel":{"alternatives":[{"transcript":"through an audio"}]}}'
-    )
-    assert finals == ["and I just want you to answer me through an audio"]
