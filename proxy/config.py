@@ -50,7 +50,7 @@ class Settings:
     yes_asset_path: str = "assets/yes.wav"
     wake_sounds_dir: str = "assets/wake"
     wake_phrase: str = "proxy"
-    wake_aliases: str = "proxy,stars,tarz"
+    wake_aliases: str = "proxy,roxy,rocky"
     vosk_model_path: str = "assets/models/vosk-model-small-en-us-0.15"
     vad_start_rms: float = 600.0
     vad_end_rms: float = 350.0
@@ -122,7 +122,7 @@ class Settings:
             yes_asset_path=os.getenv("PROXY_YES_ASSET_PATH", "assets/yes.wav"),
             wake_sounds_dir=os.getenv("PROXY_WAKE_SOUNDS_DIR", "assets/wake"),
             wake_phrase=os.getenv("PROXY_WAKE_PHRASE", "proxy"),
-            wake_aliases=os.getenv("PROXY_WAKE_ALIASES", "proxy,stars,tarz"),
+            wake_aliases=os.getenv("PROXY_WAKE_ALIASES", "proxy,roxy,rocky"),
             vosk_model_path=os.getenv(
                 "PROXY_VOSK_MODEL_PATH", "assets/models/vosk-model-small-en-us-0.15"
             ),
