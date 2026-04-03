@@ -36,7 +36,7 @@ These three variables use unprefixed names because they're standard across tools
 | Variable | Default | Description |
 |---|---|---|
 | `PROXY_WAKE_PHRASE` | `proxy` | Primary wake phrase |
-| `PROXY_WAKE_ALIASES` | `proxy,stars,tarz` | Comma-separated wake phrase variants (catches misrecognitions) |
+| `PROXY_WAKE_ALIASES` | `proxy,roxy, rocky` | Comma-separated wake phrase variants (catches misrecognitions) |
 | `PROXY_VOSK_MODEL_PATH` | `assets/models/vosk-model-small-en-us-0.15` | Path to Vosk speech model directory |
 | `PROXY_VAD_START_RMS` | `600.0` | Minimum RMS to detect speech start |
 | `PROXY_VAD_END_RMS` | `350.0` | Maximum RMS to count as silence |
