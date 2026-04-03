@@ -131,3 +131,24 @@ def test_merge_partial_utterance_without_overlap_appends() -> None:
 def test_token_overlap_count_detects_suffix_prefix_overlap() -> None:
     overlap = _token_overlap_count("alpha beta gamma delta", "gamma delta epsilon zeta")
     assert overlap == 2
+
+
+def test_utterance_end_flushes_assembled_as_final() -> None:
+    adapter = DeepgramSTTAdapter(api_key="k", sample_rate=16000)
+    finals: list[str] = []
+    adapter.on_final(finals.append)
+    adapter._handle_message(
+        '{"type":"Results","is_final":false,"channel":{"alternatives":[{"transcript":"hello world"}]}}'
+    )
+    adapter._handle_message('{"type":"UtteranceEnd","channel":[0,1],"last_word_end":1.5}')
+    assert finals == ["hello world"]
+    assert adapter._last_partial_text == ""
+    assert adapter._assembled_partial_text == ""
+
+
+def test_utterance_end_ignored_when_no_text() -> None:
+    adapter = DeepgramSTTAdapter(api_key="k", sample_rate=16000)
+    finals: list[str] = []
+    adapter.on_final(finals.append)
+    adapter._handle_message('{"type":"UtteranceEnd","channel":[0,1],"last_word_end":1.0}')
+    assert finals == []

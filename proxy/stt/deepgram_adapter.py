@@ -130,6 +130,25 @@ class DeepgramSTTAdapter:
             self._logger.info("Deepgram listener closed")
 
     def _handle_message(self, raw: str) -> None:
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            return
+
+        msg_type = payload.get("type", "")
+
+        if msg_type == "UtteranceEnd":
+            final_text = (self._last_partial_text or self._assembled_partial_text).strip()
+            if final_text:
+                self._last_partial_text = ""
+                self._assembled_partial_text = ""
+                if self._on_final is not None:
+                    self._on_final(final_text)
+            return
+
+        if msg_type != "Results":
+            return
+
         parsed = extract_transcript(raw)
         if parsed is None:
             return
@@ -144,7 +163,6 @@ class DeepgramSTTAdapter:
             if self._on_final is not None:
                 self._on_final(final_text)
         elif is_final:
-            # Segment finalized but speaker not done — treat as partial
             if transcript:
                 self._last_partial_text = transcript
                 self._assembled_partial_text = _merge_partial_utterance(
