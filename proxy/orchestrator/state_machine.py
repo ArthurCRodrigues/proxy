@@ -39,7 +39,7 @@ def apply_event(ctx: OrchestratorContext, event: Event) -> OrchestratorContext:
         if event.type == EventType.WAKE:
             return OrchestratorContext(
                 state=AssistantState.WAKE_DETECTED,
-                session_id=_new_id(),
+                session_id=ctx.session_id,
                 turn_id=None,
             )
         raise InvalidTransitionError(f"{state} cannot handle {event.type}")

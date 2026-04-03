@@ -1,162 +1,139 @@
-# PROXY
+# Proxy
 
-PROXY is a voice-first coding runtime built around Copilot CLI. It listens for a wake phrase, captures speech, sends prompts to Copilot, and speaks responses back with low-latency streaming.
+Proxy is an event-driven voice assistant that sits between a user and GitHub Copilot CLI. It listens for a wake word through a local speech model, transcribes the user's voice via Deepgram, sends the transcription to a persistent Copilot ACP session, and speaks the response back through ElevenLabs TTS — all with streaming, low-latency playback.
 
-## Architecture at a glance
+## How it works
 
-```text
-Mic (sounddevice) -> AudioIO -> WakeVadEngine (Vosk + RMS VAD) -> EventBus
-                                                     |
-                                                     +-> Deepgram STT (partial/final)
-
-EventBus <-> Orchestrator (state + turn/session routing) <-> CopilotBridge
-                                                           (ACP warm process or subprocess JSONL)
-
-Copilot events -> TTS chunking -> ElevenLabs adapter -> PlaybackEngine -> Speaker
+```
+Mic ─► AudioIO ─► WakeVadEngine (Vosk wake word + RMS VAD)
+                       │
+                       ├─ wake detected ──► EventBus ──► Orchestrator
+                       │                                     │
+                       └─ audio chunks ──► Deepgram STT      │
+                                               │             │
+                                          USER_FINAL ────────┘
+                                                              │
+                                                        CopilotBridge (ACP)
+                                                              │
+                                                     ASSISTANT_PARTIAL / FINAL
+                                                              │
+                                                    TTS chunking ─► ElevenLabs
+                                                                        │
+                                                                   PlaybackEngine ─► Speaker
 ```
 
-Core design:
-- local control loop for wake, VAD, state, cancellation, anti-echo gating
-- cloud STT/TTS for quality
-- persistent Copilot context with session pool and ACP default
+## Lifecycle
 
-## Runtime lifecycle
+1. On startup, Proxy launches a background Copilot ACP process and prewarms a standby session. The session is immediately bootstrapped with system instructions so subsequent prompts carry no bootstrap overhead.
 
-1. Boot initializes config, audio I/O, STT, TTS, event bus, orchestrator, and Copilot bridge.
-2. A standby Copilot session is prewarmed at startup.
-3. Wake phrase detection (`WAKE`) transitions to `WAKE_DETECTED`, then `READY` to `LISTENING`.
-4. User speech final (`USER_FINAL`) moves to `THINKING` and is sent to Copilot.
-5. Copilot deltas/finals become `ASSISTANT_PARTIAL`/`ASSISTANT_FINAL`, which feed TTS.
-6. Final response returns the state to `IDLE`.
+2. The system enters `IDLE` and the wake engine continuously listens for the configured wake phrase using a local Vosk model.
 
-## Authoritative state machine
+3. When the wake word is detected, Proxy plays a random acknowledgment sound from a local assets directory, promotes the standby Copilot session to active, and begins prewarming the next standby session. The state machine transitions through `WAKE_DETECTED` → `LISTENING`.
 
-States:
-- `IDLE`
-- `WAKE_DETECTED`
-- `LISTENING`
-- `THINKING`
-- `SPEAKING`
-- `INTERRUPTING`
-- `STOPPED`
+4. While in `LISTENING`, audio is forwarded to Deepgram for streaming transcription. A local RMS-based VAD detects end-of-speech silence and triggers Deepgram to finalize the transcript. If the user says a cancel phrase (e.g. "never mind"), the system returns to `IDLE`. A configurable inactivity timeout does the same if the user stays silent.
 
-Key transitions:
-- `IDLE + WAKE -> WAKE_DETECTED`
-- `WAKE_DETECTED + READY -> LISTENING`
-- `LISTENING + USER_FINAL -> THINKING`
-- `THINKING + ASSISTANT_PARTIAL -> SPEAKING`
-- `THINKING|SPEAKING + BARGE_IN -> INTERRUPTING`
-- `INTERRUPTING + INTERRUPT_ACK -> LISTENING`
-- `THINKING|SPEAKING + ASSISTANT_FINAL -> IDLE`
-- `LISTENING + CANCEL|LISTENING_TIMEOUT -> IDLE`
-- `* + STOP -> STOPPED`
+5. On a finalized transcript (`USER_FINAL`), the state moves to `THINKING` and the text is sent to the active Copilot session. No new session is created — the existing one preserves full conversational context.
 
-## Event model
+6. As Copilot streams back partial responses, they are buffered and split into speakable chunks at natural sentence boundaries. Each chunk is sent to ElevenLabs for synthesis and played back sequentially, so the user hears speech while Copilot is still generating. The state is `SPEAKING` during this phase.
 
-Canonical event types are defined in `PROXY/types.py`:
+7. When Copilot emits its final response, the state returns to `IDLE` and Proxy is ready for the next wake word. The same Copilot session remains active for conversational continuity unless the user explicitly says "start new session."
 
-- User/audio control: `WAKE`, `USER_SPEECH_START`, `USER_SPEECH_END`, `USER_PARTIAL`, `USER_FINAL`, `BARGE_IN`, `CANCEL`, `LISTENING_TIMEOUT`
-- Assistant/Copilot: `ASSISTANT_PARTIAL`, `ASSISTANT_FINAL`, `TOOL_START`, `TOOL_END`, `SESSION_EXIT`
-- System: `READY`, `ERROR`, `INTERRUPT_ACK`, `STOP`
+## State machine
 
-Each event has `event_id`, `ts`, and optional `session_id`/`turn_id`.
+```
+IDLE ──WAKE──► WAKE_DETECTED ──READY──► LISTENING ──USER_FINAL──► THINKING
+  ▲                                        │                         │
+  │                              CANCEL / TIMEOUT              ASSISTANT_PARTIAL
+  │                                        │                         │
+  └────────────────────────────────────────┘                         ▼
+  ▲                                                              SPEAKING
+  │                                                                  │
+  └──────────────────── ASSISTANT_FINAL ─────────────────────────────┘
+```
+
+States: `IDLE`, `WAKE_DETECTED`, `LISTENING`, `THINKING`, `SPEAKING`, `STOPPED`
+
+Global transitions:
+- `STOP` → `STOPPED` (from any state)
+- `ERROR`, `USER_PARTIAL` → no-op (from any state)
+
+## Event types
+
+| Event | Published by | Purpose |
+|---|---|---|
+| `WAKE` | WakeVadEngine | Wake phrase detected by Vosk |
+| `READY` | Orchestrator | Wake handling complete, begin listening |
+| `USER_PARTIAL` | main (STT callback) | Interim transcript; resets listening timeout |
+| `USER_FINAL` | main (STT callback) | Finalized transcript; triggers Copilot prompt |
+| `CANCEL` | main (STT callback) | Cancel phrase detected; returns to IDLE |
+| `LISTENING_TIMEOUT` | Orchestrator | No speech activity within timeout window |
+| `ASSISTANT_PARTIAL` | CopilotBridge | Streaming text chunk from Copilot |
+| `ASSISTANT_FINAL` | CopilotBridge | Complete response from Copilot |
+| `ERROR` | CopilotBridge | ACP prompt failure (logged, no state change) |
+| `STOP` | main (shutdown) | Terminates the orchestrator loop |
+
+## Anti self-listening
+
+Two layers prevent Proxy from transcribing its own voice:
+
+- `SpeechGate` — blocks STT acceptance for a configurable hold window after TTS playback starts.
+- `EchoFilter` — keeps recent assistant text and rejects STT transcripts with high similarity (SequenceMatcher ratio).
+
+STT forwarding is also gated by orchestrator state — audio only reaches Deepgram while in `LISTENING`.
 
 ## Copilot integration
 
-`CopilotBridge` supports two modes:
+`CopilotBridge` communicates exclusively through ACP (Agent Control Protocol): it starts `copilot --acp --stdio`, initializes a JSON-RPC connection, creates sessions via `session/new`, and sends prompts via `session/prompt`. Streaming deltas arrive through `session/update` notifications.
 
-1. **ACP mode (default)**: starts `copilot --acp --stdio`, initializes JSON-RPC, opens sessions via `session/new`, sends prompts via `session/prompt`, and streams partials from `session/update`.
-2. **Subprocess JSONL mode**: runs `copilot -p ... --output-format json` and parses JSON lines.
+`SessionPool` manages a standby + active session pair. On wake, the standby is promoted to active and a new standby is prewarmed in the background. Bootstrap instructions are sent once per session at creation time.
 
-Session behavior:
-- standby + active session pool (`SessionPool`)
-- wake activation promotes standby to active
-- rollover prewarms next standby session
-- `start new session` voice command resets active Copilot context
+## TTS pipeline
 
-Bootstrap behavior:
-- if enabled, prepends `copilot-instructions.md` content to first prompt in a session
+Copilot partial deltas are appended into a text buffer. A chunking layer splits the buffer at sentence boundaries (`.!?` or newline) once a minimum character threshold is reached, with a force-flush fallback for long boundaryless runs. Each chunk is synthesized by ElevenLabs and played sequentially. On the final response, any remaining buffer is flushed.
 
-## Speech pipeline
-
-TTS is event-driven:
-- partial deltas are appended into a text buffer
-- chunking emits speakable segments at punctuation/newline boundaries with configurable thresholds
-- finals flush remaining buffered text
-- when partial speech is enabled, final dedupe avoids replaying already-spoken content
-
-Chunking controls:
-- `PROXY_TTS_SPEAK_PARTIALS`
-- `PROXY_TTS_PARTIAL_MIN_CHARS`
-- `PROXY_TTS_PARTIAL_FORCE_FLUSH_CHARS` (`0` disables forced boundaryless flush)
-
-ElevenLabs adapter:
-- default output `pcm_22050`
-- fallback output formats if primary format is denied
-- resilient synthesis path so one failed chunk does not collapse runtime loop
-
-## Anti self-listening protections
-
-PROXY uses two layers to reduce transcribing its own voice:
-
-1. `SpeechGate`: blocks STT acceptance for a hold window after TTS playback starts.
-2. `EchoFilter`: keeps recent assistant text and rejects STT transcripts with strong similarity.
-
-Additionally, STT forwarding is gated by orchestrator state (`LISTENING` only).
-
-## Logging and observability
-
-`configure_logger()` sets global formatting and suppresses noisy third-party internals:
-- `websockets`, `websockets.client`, `asyncio`, `httpcore`, `httpx` => warning-level
-
-Useful runtime logs:
-- state transitions (`PROXY.orchestrator`)
-- wake events (`PROXY.wake_vad`)
-- Copilot prompt/session lifecycle (`PROXY.copilot.bridge`)
-- STT partial/final and drops (`PROXY.main`, `PROXY.stt.deepgram`)
-- TTS synthesis/playback issues (`PROXY.tts.elevenlabs`)
+Configuration:
+- `PROXY_TTS_SPEAK_PARTIALS` — enable streaming partial speech (default: on)
+- `PROXY_TTS_PARTIAL_MIN_CHARS` — minimum chars before emitting a chunk
+- `PROXY_TTS_PARTIAL_FORCE_FLUSH_CHARS` — force emit without a boundary (`0` disables)
 
 ## Repository structure
 
-```text
-PROXY/
-  main.py                    # Wiring and runtime orchestration
-  config.py                  # Environment-backed settings
-  types.py                   # Event/state enums and event dataclass
+```
+proxy/
+  main.py                    # Wiring, runtime orchestration, STT/TTS callbacks
+  config.py                  # Environment-backed settings (PROXY_* env vars)
+  types.py                   # EventType, AssistantState enums, Event dataclass
   audio/
-    io.py                    # Mic capture stream wrapper
-    wake_vad.py              # Wake word + RMS VAD loop
-    playback.py              # PCM output playback
-    assets.py                # WAV loading and wake sound selection
+    io.py                    # Mic capture stream (sounddevice)
+    wake_vad.py              # Vosk wake word detection + RMS VAD
+    playback.py              # PCM audio output
+    assets.py                # WAV loading, wake sound selection
   stt/
-    deepgram_adapter.py      # Deepgram websocket streaming adapter
-    filtering.py             # Speech gate + echo filter
+    deepgram_adapter.py      # Deepgram websocket streaming STT
+    filtering.py             # SpeechGate + EchoFilter
   copilot/
-    bridge.py                # ACP + subprocess Copilot transport
-    parser.py                # JSONL event parser
+    bridge.py                # ACP JSON-RPC transport, prompt execution, bootstrap
     session_pool.py          # Standby/active session management
   tts/
-    elevenlabs_adapter.py    # ElevenLabs synthesis adapter
-    chunking.py              # Partial/final text segmentation and merge rules
+    elevenlabs_adapter.py    # ElevenLabs synthesis
+    chunking.py              # Partial/final text segmentation
   orchestrator/
-    event_bus.py             # Async queue bus
-    state_machine.py         # Deterministic reducer
-    engine.py                # Event loop and side effects
+    event_bus.py             # Async queue event bus
+    state_machine.py         # Deterministic state reducer
+    engine.py                # Event loop, side effects, listening timeout
   observability/
     logger.py                # Logger configuration
 tests/
-  unit/                      # State, bridge, chunking, adapters
+  unit/                      # State machine, bridge, chunking, adapters, VAD
 ```
 
 ## Requirements
 
 - Python 3.11+
-- Local audio input/output support (PortAudio via `sounddevice`)
-- Vosk model files for wake detection
+- PortAudio (via `sounddevice`)
+- Vosk model for wake detection
 - Copilot CLI installed and authenticated
-- API keys for:
-  - Deepgram
-  - ElevenLabs
+- API keys: Deepgram, ElevenLabs
 
 ## Quick start
 
@@ -164,48 +141,26 @@ tests/
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-cp .env.example .env
-python -m PROXY.main
+cp .env.example .env       # fill in API keys
+python -m proxy.main
 ```
-
-## Environment configuration
-
-Use `.env.example` as the source of truth. Main groups:
-
-- API credentials: `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`
-- Runtime: `PROXY_LOG_LEVEL`, queue sizing
-- Audio I/O: sample rate/channels/chunk/device
-- Wake/VAD: wake phrase/aliases, Vosk path, RMS thresholds, cooldowns, debug flags
-- Deepgram STT: model/language/endpointing/utterance, keyterms, reconnect
-- Speech turn controls: STT gate/de-echo/listening timeout/cancel commands
-- Copilot bridge: command/model/allow-all/bootstrap/ACP toggle
-- Assistant speech output: partial controls and chunk thresholds
 
 ## Wake model setup
 
-Place a Vosk model at:
+Place a Vosk model at `assets/models/vosk-model-small-en-us-0.15`, or set `PROXY_VOSK_MODEL_PATH` to a custom location.
 
-`assets/models/vosk-model-small-en-us-0.15`
+## Environment configuration
 
-Or set a custom path with `PROXY_VOSK_MODEL_PATH`.
+See `.env.example` for all available settings. Key groups:
 
-## Benchmarking Copilot latency
-
-Run:
-
-```bash
-python benchmark_copilot_latency.py --runs 5
-```
-
-Measures:
-- classic `copilot -p` end-to-end process latency
-- warm ACP prompt latency (timer starts at `session/prompt` send, not ACP startup)
-
-Useful flags:
-- `--prompt "..."`
-- `--model ...`
-- `--fresh-acp-session-per-run`
-- `--json`
+- API credentials: `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`
+- Runtime: `PROXY_LOG_LEVEL`, `PROXY_QUEUE_MAXSIZE`
+- Audio: sample rate, channels, chunk size, input device
+- Wake/VAD: wake phrase and aliases, Vosk path, RMS thresholds, cooldowns
+- Deepgram: model, language, endpointing, utterance end, keyterms
+- Speech turn: STT gate, echo filter, listening timeout, cancel commands
+- Copilot: command, model, bootstrap instructions path
+- TTS: partial speech controls, chunk thresholds
 
 ## Testing
 
