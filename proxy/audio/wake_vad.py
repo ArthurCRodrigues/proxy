@@ -61,6 +61,7 @@ class WakeVadEngine:
         vad_start_rms: float = 600.0,
         vad_end_rms: float = 350.0,
         vad_end_silence_ms: int = 700,
+        vad_finalize_stt: bool = True,
         debug_transcripts: bool = False,
         debug_rms: bool = False,
         wake_enabled: Callable[[], bool] | None = None,
@@ -93,6 +94,7 @@ class WakeVadEngine:
         self._wake_retrigger_cooldown_s = wake_retrigger_cooldown_ms / 1000.0
         self._wake_rearm_guard_s = wake_rearm_guard_ms / 1000.0
         self._wake_match_partial = wake_match_partial
+        self._vad_finalize_stt = vad_finalize_stt
         self._last_wake_at = 0.0
         self._wake_armed = True
         self._idle_entered_at = monotonic() - self._wake_rearm_guard_s
@@ -161,7 +163,7 @@ class WakeVadEngine:
                 self._logger.debug("RMS: %.1f", rms)
             start_trigger, end_trigger = self._vad.step(rms=rms, chunk_ms=chunk_ms)
             if end_trigger:
-                if self._stt is not None and self._stt.ready() and can_send_stt:
+                if self._vad_finalize_stt and self._stt is not None and self._stt.ready() and can_send_stt:
                     await self._stt.end_utterance()
             if not self._wake_should_trigger():
                 continue
