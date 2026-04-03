@@ -35,7 +35,6 @@ class CopilotBridge:
         command: str = "copilot",
         model: str = "",
         allow_all: bool = True,
-        bootstrap_instructions: bool = True,
         instructions_path: str = _default_instructions_path(),
         on_assistant_partial: Callable[[str], None] | None = None,
         on_assistant_final: Callable[[str], None] | None = None,
@@ -44,7 +43,6 @@ class CopilotBridge:
         self._command = command
         self._model = model
         self._allow_all = allow_all
-        self._bootstrap_instructions = bootstrap_instructions
         self._instructions_path = instructions_path
         self._logger = get_logger("proxy.copilot.bridge")
         self._active_task: asyncio.Task[None] | None = None
@@ -451,27 +449,28 @@ class CopilotBridge:
                 await self._acp_proc.wait()
         self._acp_proc = None
 
+    _DEFAULT_INSTRUCTIONS = (
+        "You are a voice assistant. The user is speaking to you through speech-to-text, "
+        "and your responses will be read aloud via text-to-speech. "
+        "Respond using plain, conversational language. Keep answers concise and natural for spoken delivery. "
+        "Avoid markdown, code fences, bullet lists, or any visual formatting."
+    )
+
     def _with_bootstrap_instructions(self, prompt: str, include_bootstrap: bool) -> str:
-        if not self._bootstrap_instructions or not include_bootstrap:
+        if not include_bootstrap:
             return prompt
 
         path = Path(self._instructions_path).expanduser()
-        if not path.exists():
-            self._logger.warning(
-                "Copilot instructions file not found at %s; sending raw prompt",
-                path,
-            )
-            return prompt
+        if path.exists():
+            content = path.read_text(encoding="utf-8").strip()
+            if content:
+                return (
+                    f"System bootstrap instructions:\\n{content}\\n\\n"
+                    f"User request (verbatim STT):\\n{prompt}"
+                )
 
-        content = path.read_text(encoding="utf-8").strip()
-        if not content:
-            self._logger.warning(
-                "Copilot instructions file empty at %s; sending raw prompt",
-                path,
-            )
-            return prompt
-
+        self._logger.info("No instructions file found at %s; using default voice instructions", path)
         return (
-            f"System bootstrap instructions:\\n{content}\\n\\n"
+            f"System bootstrap instructions:\\n{self._DEFAULT_INSTRUCTIONS}\\n\\n"
             f"User request (verbatim STT):\\n{prompt}"
         )

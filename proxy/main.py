@@ -221,7 +221,6 @@ async def _run() -> None:
         command=settings.copilot_command,
         model=settings.copilot_model,
         allow_all=settings.copilot_allow_all,
-        bootstrap_instructions=settings.copilot_bootstrap_instructions,
         instructions_path=settings.copilot_instructions_path,
         on_assistant_partial=_on_assistant_partial,
         on_assistant_final=_on_assistant_final,

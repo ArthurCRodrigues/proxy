@@ -80,7 +80,6 @@ class Settings:
     copilot_command: str = "copilot"
     copilot_model: str = ""
     copilot_allow_all: bool = True
-    copilot_bootstrap_instructions: bool = True
     copilot_instructions_path: str = _default_copilot_instructions_path()
     tts_speak_partials: bool = True
     tts_partial_min_chars: int = 12
@@ -167,10 +166,6 @@ class Settings:
             copilot_command=os.getenv("PROXY_COPILOT_COMMAND", "copilot"),
             copilot_model=os.getenv("PROXY_COPILOT_MODEL", ""),
             copilot_allow_all=os.getenv("PROXY_COPILOT_ALLOW_ALL", "1")
-            in ("1", "true", "True"),
-            copilot_bootstrap_instructions=os.getenv(
-                "PROXY_COPILOT_BOOTSTRAP_INSTRUCTIONS", "1"
-            )
             in ("1", "true", "True"),
             copilot_instructions_path=copilot_instructions_path,
             tts_speak_partials=os.getenv("PROXY_TTS_SPEAK_PARTIALS", "1")

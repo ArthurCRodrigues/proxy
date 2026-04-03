@@ -15,7 +15,6 @@ def test_bridge_bootstrap_instructions_wrap_prompt(tmp_path: Path) -> None:
 
     bridge = CopilotBridge(
         event_bus=bus,
-        bootstrap_instructions=True,
         instructions_path=str(instructions),
     )
     wrapped = bridge._with_bootstrap_instructions("Fix issue 123", include_bootstrap=True)
@@ -25,10 +24,16 @@ def test_bridge_bootstrap_instructions_wrap_prompt(tmp_path: Path) -> None:
     assert wrapped.endswith("Fix issue 123")
 
 
-def test_bridge_bootstrap_disabled_keeps_raw_prompt() -> None:
+def test_bridge_bootstrap_falls_back_to_default_when_no_file(tmp_path: Path) -> None:
     bus = EventBus()
-    bridge = CopilotBridge(event_bus=bus, bootstrap_instructions=False)
-    assert bridge._with_bootstrap_instructions("hello", include_bootstrap=True) == "hello"
+    bridge = CopilotBridge(
+        event_bus=bus,
+        instructions_path=str(tmp_path / "nonexistent.md"),
+    )
+    wrapped = bridge._with_bootstrap_instructions("hello", include_bootstrap=True)
+    assert "System bootstrap instructions:" in wrapped
+    assert "voice assistant" in wrapped
+    assert "hello" in wrapped
 
 
 def test_bridge_bootstrap_skipped_when_not_requested(tmp_path: Path) -> None:
@@ -37,7 +42,6 @@ def test_bridge_bootstrap_skipped_when_not_requested(tmp_path: Path) -> None:
     instructions.write_text("Use speech style.", encoding="utf-8")
     bridge = CopilotBridge(
         event_bus=bus,
-        bootstrap_instructions=True,
         instructions_path=str(instructions),
     )
     assert bridge._with_bootstrap_instructions("hello", include_bootstrap=False) == "hello"
@@ -46,7 +50,7 @@ def test_bridge_bootstrap_skipped_when_not_requested(tmp_path: Path) -> None:
 def test_bridge_send_user_turn_bootstrap_only_first_turn() -> None:
     async def _run() -> None:
         bus = EventBus()
-        bridge = CopilotBridge(event_bus=bus, bootstrap_instructions=False)
+        bridge = CopilotBridge(event_bus=bus)
         captured: list[tuple[bool, str]] = []
 
         async def fake_run_prompt(
@@ -58,7 +62,6 @@ def test_bridge_send_user_turn_bootstrap_only_first_turn() -> None:
             captured.append((include_bootstrap, session_id))
 
         bridge._run_prompt = fake_run_prompt  # type: ignore[assignment]
-        # Manually set an active session to avoid ACP calls
         from proxy.copilot.bridge import CopilotSessionHandle
         bridge._active_session = CopilotSessionHandle(session_id="test-session")
 
@@ -80,7 +83,7 @@ def test_bridge_send_user_turn_bootstrap_only_first_turn() -> None:
 def test_bridge_acp_prompt_state_accumulates_text() -> None:
     async def _run() -> None:
         bus = EventBus()
-        bridge = CopilotBridge(event_bus=bus, bootstrap_instructions=False)
+        bridge = CopilotBridge(event_bus=bus)
         session_id = "sess-1"
         bridge._acp_prompt_states[session_id] = _AcpPromptState(
             turn_id="t1",
@@ -105,10 +108,7 @@ def test_bridge_acp_prompt_state_accumulates_text() -> None:
 def test_emit_assistant_final_publishes_text_payload() -> None:
     async def _run() -> None:
         bus = EventBus()
-        bridge = CopilotBridge(
-            event_bus=bus,
-            bootstrap_instructions=False,
-        )
+        bridge = CopilotBridge(event_bus=bus)
         await bridge._emit_assistant_final("s1", "t1", "Plain text without contract")
         event = await bus.next_event()
         assert event.type == EventType.ASSISTANT_FINAL
