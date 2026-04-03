@@ -61,14 +61,17 @@ def test_url_supports_keyterms_and_disable_endpointing() -> None:
     assert "keyterm=GitHub+issue" in url
 
 
-def test_is_final_emitted_directly() -> None:
+def test_is_final_without_speech_final_treated_as_partial() -> None:
     adapter = DeepgramSTTAdapter(api_key="k", sample_rate=16000)
+    partials: list[str] = []
     finals: list[str] = []
+    adapter.on_partial(partials.append)
     adapter.on_final(finals.append)
     adapter._handle_message(
         '{"type":"Results","is_final":true,"channel":{"alternatives":[{"transcript":"hello"}]}}'
     )
-    assert finals == ["hello"]
+    assert partials == ["hello"]
+    assert finals == []
 
 
 def test_speech_final_emitted_directly() -> None:

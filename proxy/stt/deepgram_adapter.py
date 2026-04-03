@@ -134,7 +134,7 @@ class DeepgramSTTAdapter:
             return
 
         transcript, is_final, speech_final = parsed
-        if is_final or speech_final:
+        if speech_final:
             final_text = self._assemble_final_text(transcript)
             if not final_text:
                 return
@@ -142,6 +142,16 @@ class DeepgramSTTAdapter:
             self._assembled_partial_text = ""
             if self._on_final is not None:
                 self._on_final(final_text)
+        elif is_final:
+            # Segment finalized but speaker not done — treat as partial
+            if transcript:
+                self._last_partial_text = transcript
+                self._assembled_partial_text = _merge_partial_utterance(
+                    self._assembled_partial_text,
+                    transcript,
+                )
+                if self._on_partial is not None:
+                    self._on_partial(transcript)
         else:
             self._last_partial_text = transcript
             self._assembled_partial_text = _merge_partial_utterance(
