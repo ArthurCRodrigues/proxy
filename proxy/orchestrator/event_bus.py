@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from tars.types import Event
+from proxy.types import Event
 
 
 class EventBus:

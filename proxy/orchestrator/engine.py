@@ -3,15 +3,15 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 
-from tars.copilot.bridge import CopilotBridge
-from tars.observability.logger import get_logger
-from tars.orchestrator.event_bus import EventBus
-from tars.orchestrator.state_machine import (
+from proxy.copilot.bridge import CopilotBridge
+from proxy.observability.logger import get_logger
+from proxy.orchestrator.event_bus import EventBus
+from proxy.orchestrator.state_machine import (
     InvalidTransitionError,
     OrchestratorContext,
     apply_event,
 )
-from tars.types import AssistantState, Event, EventType
+from proxy.types import AssistantState, Event, EventType
 
 
 class Orchestrator:
@@ -23,7 +23,7 @@ class Orchestrator:
     ) -> None:
         self._event_bus = event_bus
         self._ctx = OrchestratorContext()
-        self._logger = get_logger("tars.orchestrator")
+        self._logger = get_logger("proxy.orchestrator")
         self._running = False
         self._on_wake = on_wake
         self._copilot = copilot_bridge
@@ -38,10 +38,11 @@ class Orchestrator:
         return self._ctx
 
     async def handle_event(self, event: Event) -> None:
+        # Drop stale events from old turns
         if (
             event.turn_id is not None
             and event.turn_id != self._ctx.turn_id
-            and event.type in (EventType.ASSISTANT_PARTIAL, EventType.ASSISTANT_FINAL, EventType.SESSION_EXIT)
+            and event.type in (EventType.ASSISTANT_PARTIAL, EventType.ASSISTANT_FINAL)
         ):
             self._logger.debug(
                 "Dropping stale event: type=%s event_turn=%s active_turn=%s",
@@ -78,12 +79,10 @@ class Orchestrator:
         self._ctx = new_ctx
         if previous_state != new_ctx.state:
             self._on_state_change(previous_state, new_ctx.state)
-        elif (
-            new_ctx.state == AssistantState.LISTENING
-            and event.type in (EventType.USER_SPEECH_START, EventType.USER_SPEECH_END, EventType.USER_PARTIAL)
-        ):
-            # Listening timeout tracks inactivity, so speech activity refreshes it.
+        elif new_ctx.state == AssistantState.LISTENING and event.type == EventType.USER_PARTIAL:
             self._arm_listening_timeout()
+
+        # Side effects
         if event.type == EventType.WAKE:
             if self._on_wake is not None:
                 await self._on_wake()
@@ -98,8 +97,6 @@ class Orchestrator:
             text = str(event.payload.get("text", "")).strip()
             if text:
                 await self._copilot.send_user_turn(text, turn_id=self._ctx.turn_id)
-        if event.type == EventType.BARGE_IN and self._copilot is not None:
-            await self._copilot.interrupt_turn()
 
     def _on_state_change(self, previous: AssistantState, new: AssistantState) -> None:
         if new == AssistantState.LISTENING:

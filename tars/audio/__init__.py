@@ -1,2 +1,0 @@
-"""Audio components for TARS."""
-

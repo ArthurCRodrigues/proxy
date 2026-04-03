@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from tars.tts.elevenlabs_adapter import ElevenLabsTTSAdapter
+from proxy.tts.elevenlabs_adapter import ElevenLabsTTSAdapter
 
 
 def test_synthesize_text_requires_api_key() -> None:

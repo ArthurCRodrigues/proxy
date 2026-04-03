@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from tars.copilot.bridge import CopilotBridge, CopilotSessionHandle
+from proxy.copilot.bridge import CopilotBridge, CopilotSessionHandle
 
 
 @dataclass

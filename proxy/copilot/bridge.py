@@ -4,14 +4,12 @@ import asyncio
 import json
 import os
 from pathlib import Path
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from dataclasses import dataclass
-from uuid import uuid4
 
-from tars.copilot.parser import parse_jsonl_event
-from tars.observability.logger import get_logger
-from tars.orchestrator.event_bus import EventBus
-from tars.types import Event, EventType
+from proxy.observability.logger import get_logger
+from proxy.orchestrator.event_bus import EventBus
+from proxy.types import Event, EventType
 
 
 def _default_instructions_path() -> str:
@@ -39,8 +37,6 @@ class CopilotBridge:
         allow_all: bool = True,
         bootstrap_instructions: bool = True,
         instructions_path: str = _default_instructions_path(),
-        use_acp: bool = True,
-        on_session_exit: Callable[[str, int], Awaitable[None]] | None = None,
         on_assistant_partial: Callable[[str], None] | None = None,
         on_assistant_final: Callable[[str], None] | None = None,
     ) -> None:
@@ -50,7 +46,6 @@ class CopilotBridge:
         self._allow_all = allow_all
         self._bootstrap_instructions = bootstrap_instructions
         self._instructions_path = instructions_path
-        self._use_acp = use_acp
         self._logger = get_logger("proxy.copilot.bridge")
         self._active_task: asyncio.Task[None] | None = None
         self._bootstrap_task: asyncio.Task[None] | None = None
@@ -63,15 +58,12 @@ class CopilotBridge:
         self._acp_prompt_states: dict[str, _AcpPromptState] = {}
         self._acp_protocol_version = 1
         self._acp_initialized = False
-        self._on_session_exit = on_session_exit
         self._on_assistant_partial = on_assistant_partial
         self._on_assistant_final = on_assistant_final
 
     async def prewarm_session(self) -> CopilotSessionHandle:
-        if self._use_acp:
-            session_id = await self._acp_new_session()
-            return CopilotSessionHandle(session_id=session_id)
-        return CopilotSessionHandle(session_id=str(uuid4()))
+        session_id = await self._acp_new_session()
+        return CopilotSessionHandle(session_id=session_id)
 
     async def activate_session_on_wake(self, handle: CopilotSessionHandle) -> CopilotSessionHandle:
         self._active_session = handle
@@ -83,7 +75,9 @@ class CopilotBridge:
         return self._active_session
 
     async def reset_session(self) -> CopilotSessionHandle:
-        await self.interrupt_turn()
+        await self._cancel_active_task()
+        if self._active_session is not None:
+            await self._acp_notify("session/cancel", {"sessionId": self._active_session.session_id})
         await self._cancel_bootstrap_task()
         self._active_session = await self.prewarm_session()
         return self._active_session
@@ -97,26 +91,15 @@ class CopilotBridge:
                 await self._cancel_bootstrap_task()
         include_bootstrap = session.session_id not in self._bootstrapped_sessions
         if self._active_task is not None and not self._active_task.done():
-            await self.interrupt_turn()
+            await self._cancel_active_task()
+            if self._active_session is not None:
+                await self._acp_notify("session/cancel", {"sessionId": self._active_session.session_id})
         self._active_task = asyncio.create_task(
             self._run_prompt(text, session.session_id, turn_id, include_bootstrap)
         )
 
-    async def interrupt_turn(self) -> None:
-        if self._active_task is not None:
-            if not self._active_task.done():
-                self._active_task.cancel()
-                try:
-                    await self._active_task
-                except asyncio.CancelledError:
-                    pass
-            self._active_task = None
-        if self._use_acp and self._active_session is not None:
-            await self._acp_notify("session/cancel", {"sessionId": self._active_session.session_id})
-        await self._event_bus.publish(Event(type=EventType.INTERRUPT_ACK))
-
     async def hard_stop(self) -> None:
-        await self.interrupt_turn()
+        await self._cancel_active_task()
         await self._cancel_bootstrap_task()
         self._active_session = None
         self._bootstrapped_sessions.clear()
@@ -127,98 +110,17 @@ class CopilotBridge:
         self._active_session = handle
         return handle
 
+    async def _cancel_active_task(self) -> None:
+        if self._active_task is not None:
+            if not self._active_task.done():
+                self._active_task.cancel()
+                try:
+                    await self._active_task
+                except asyncio.CancelledError:
+                    pass
+            self._active_task = None
+
     async def _run_prompt(
-        self,
-        prompt: str,
-        session_id: str,
-        turn_id: str | None,
-        include_bootstrap: bool,
-    ) -> None:
-        if self._use_acp:
-            await self._run_prompt_acp(prompt, session_id, turn_id, include_bootstrap)
-            return
-        await self._run_prompt_subprocess(prompt, session_id, turn_id, include_bootstrap)
-
-    async def _run_prompt_subprocess(
-        self,
-        prompt: str,
-        session_id: str,
-        turn_id: str | None,
-        include_bootstrap: bool,
-    ) -> None:
-        effective_prompt = self._with_bootstrap_instructions(prompt, include_bootstrap)
-        cmd: list[str] = [
-            self._command,
-            "--output-format",
-            "json",
-            f"--resume={session_id}",
-            "-p",
-            effective_prompt,
-        ]
-        if self._allow_all:
-            cmd.append("--allow-all")
-        if self._model:
-            cmd.extend(["--model", self._model])
-
-        self._logger.info(
-            "COPILOT_PROMPT session=%s turn=%s bootstrap=%s prompt=%r",
-            session_id,
-            turn_id,
-            include_bootstrap,
-            effective_prompt,
-        )
-        self._logger.debug("Launching Copilot prompt process (session=%s turn=%s)", session_id, turn_id)
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        assert proc.stdout is not None
-        assert proc.stderr is not None
-
-        try:
-            while True:
-                line = await proc.stdout.readline()
-                if not line:
-                    break
-                parsed = parse_jsonl_event(line.decode("utf-8", errors="ignore"))
-                if parsed is None:
-                    continue
-                if parsed.event_type == "assistant.message_delta" and parsed.content:
-                    await self._emit_assistant_partial(session_id, turn_id, parsed.content)
-                if parsed.event_type == "assistant.message" and parsed.content:
-                    await self._emit_assistant_final(session_id, turn_id, parsed.content)
-
-            stderr_out = (await proc.stderr.read()).decode("utf-8", errors="ignore").strip()
-            rc = await proc.wait()
-            if rc == 0 and include_bootstrap:
-                self._bootstrapped_sessions.add(session_id)
-            if rc != 0:
-                await self._event_bus.publish(
-                    Event(
-                        type=EventType.ERROR,
-                        session_id=session_id,
-                        turn_id=turn_id,
-                        payload={"message": f"Copilot process failed ({rc}): {stderr_out}"},
-                    )
-                )
-            await self._event_bus.publish(
-                Event(
-                    type=EventType.SESSION_EXIT,
-                    session_id=session_id,
-                    turn_id=turn_id,
-                    payload={"code": rc},
-                )
-            )
-            if self._on_session_exit is not None:
-                await self._on_session_exit(session_id, rc)
-        except asyncio.CancelledError:
-            if proc.returncode is None:
-                proc.kill()
-                await proc.wait()
-            raise
-
-    async def _run_prompt_acp(
         self,
         prompt: str,
         session_id: str,
@@ -252,23 +154,13 @@ class CopilotBridge:
             await self._emit_assistant_final(session_id, turn_id, full_text)
             if include_bootstrap and stop_reason == "end_turn":
                 self._bootstrapped_sessions.add(session_id)
-            rc = 0 if stop_reason == "end_turn" else 1
-            await self._event_bus.publish(
-                Event(
-                    type=EventType.SESSION_EXIT,
-                    session_id=session_id,
-                    turn_id=turn_id,
-                    payload={"code": rc, "stop_reason": stop_reason},
-                )
-            )
-            if self._on_session_exit is not None:
-                await self._on_session_exit(session_id, rc)
         except asyncio.CancelledError:
             self._acp_prompt_states.pop(session_id, None)
             await self._acp_notify("session/cancel", {"sessionId": session_id})
             raise
         except Exception as exc:
             self._acp_prompt_states.pop(session_id, None)
+            self._logger.error("Copilot ACP prompt failed: %s", exc)
             await self._event_bus.publish(
                 Event(
                     type=EventType.ERROR,
@@ -277,16 +169,6 @@ class CopilotBridge:
                     payload={"message": f"Copilot ACP prompt failed: {exc}"},
                 )
             )
-            await self._event_bus.publish(
-                Event(
-                    type=EventType.SESSION_EXIT,
-                    session_id=session_id,
-                    turn_id=turn_id,
-                    payload={"code": 1, "stop_reason": "error"},
-                )
-            )
-            if self._on_session_exit is not None:
-                await self._on_session_exit(session_id, 1)
 
     async def bootstrap_active_session_background(self) -> None:
         session = await self.ensure_session()
@@ -298,60 +180,6 @@ class CopilotBridge:
         self._bootstrap_task = asyncio.create_task(self._run_bootstrap_prompt(session_id))
 
     async def _run_bootstrap_prompt(self, session_id: str) -> None:
-        if self._use_acp:
-            await self._run_bootstrap_prompt_acp(session_id)
-            return
-        await self._run_bootstrap_prompt_subprocess(session_id)
-
-    async def _run_bootstrap_prompt_subprocess(self, session_id: str) -> None:
-        prompt = self._with_bootstrap_instructions(
-            "Bootstrap this session only. Reply with READY.",
-            include_bootstrap=True,
-        )
-        cmd: list[str] = [
-            self._command,
-            "--output-format",
-            "json",
-            f"--resume={session_id}",
-            "-p",
-            prompt,
-        ]
-        if self._allow_all:
-            cmd.append("--allow-all")
-        if self._model:
-            cmd.extend(["--model", self._model])
-        self._logger.info("COPILOT_BOOTSTRAP_START session=%s", session_id)
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        assert proc.stdout is not None
-        assert proc.stderr is not None
-        try:
-            while True:
-                line = await proc.stdout.readline()
-                if not line:
-                    break
-            stderr_out = (await proc.stderr.read()).decode("utf-8", errors="ignore").strip()
-            rc = await proc.wait()
-            if rc == 0:
-                self._bootstrapped_sessions.add(session_id)
-                self._logger.info("COPILOT_BOOTSTRAP_READY session=%s", session_id)
-            else:
-                self._logger.warning(
-                    "COPILOT_BOOTSTRAP_FAILED session=%s code=%s err=%s",
-                    session_id,
-                    rc,
-                    stderr_out,
-                )
-        except asyncio.CancelledError:
-            if proc.returncode is None:
-                proc.kill()
-                await proc.wait()
-            raise
-
-    async def _run_bootstrap_prompt_acp(self, session_id: str) -> None:
         prompt = self._with_bootstrap_instructions(
             "Bootstrap this session only. Reply with READY.",
             include_bootstrap=True,
@@ -464,7 +292,7 @@ class CopilotBridge:
             {
                 "protocolVersion": self._acp_protocol_version,
                 "clientCapabilities": {},
-                "clientInfo": {"name": "tars", "version": "0.1.0"},
+                "clientInfo": {"name": "proxy", "version": "0.1.0"},
             },
         )
         protocol = int(init_result.get("protocolVersion", 1))

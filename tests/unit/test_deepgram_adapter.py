@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from tars.stt.deepgram_adapter import (
+from proxy.stt.deepgram_adapter import (
     DeepgramSTTAdapter,
     _is_ws_open,
     _merge_partial_utterance,

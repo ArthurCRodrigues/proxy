@@ -4,21 +4,21 @@ import argparse
 import asyncio
 import re
 
-from tars.audio.assets import load_random_wake_audio
-from tars.audio.io import AudioIO
-from tars.audio.playback import PlaybackEngine
-from tars.audio.wake_vad import WakeVadEngine
-from tars.copilot.bridge import CopilotBridge
-from tars.copilot.session_pool import SessionPool
-from tars.config import Settings
-from tars.observability.logger import configure_logger, get_logger
-from tars.orchestrator.engine import Orchestrator
-from tars.orchestrator.event_bus import EventBus
-from tars.stt.deepgram_adapter import DeepgramSTTAdapter
-from tars.stt.filtering import EchoFilter, SpeechGate
-from tars.tts.chunking import append_partial, consume_speakable_segments, merge_final, split_speakable_segments
-from tars.tts.elevenlabs_adapter import ElevenLabsTTSAdapter
-from tars.types import AssistantState, Event, EventType
+from proxy.audio.assets import load_random_wake_audio
+from proxy.audio.io import AudioIO
+from proxy.audio.playback import PlaybackEngine
+from proxy.audio.wake_vad import WakeVadEngine
+from proxy.copilot.bridge import CopilotBridge
+from proxy.copilot.session_pool import SessionPool
+from proxy.config import Settings
+from proxy.observability.logger import configure_logger, get_logger
+from proxy.orchestrator.engine import Orchestrator
+from proxy.orchestrator.event_bus import EventBus
+from proxy.stt.deepgram_adapter import DeepgramSTTAdapter
+from proxy.stt.filtering import EchoFilter, SpeechGate
+from proxy.tts.chunking import append_partial, consume_speakable_segments, merge_final, split_speakable_segments
+from proxy.tts.elevenlabs_adapter import ElevenLabsTTSAdapter
+from proxy.types import AssistantState, Event, EventType
 
 
 def _normalize_spoken_text(text: str) -> str:
@@ -44,8 +44,8 @@ def _parse_cancel_commands(raw: str) -> tuple[str, ...]:
 async def _run() -> None:
     settings = Settings.from_env()
     configure_logger(settings.log_level)
-    logger = get_logger("tars.main")
-    logger.info("Starting TARS bootstrap")
+    logger = get_logger("proxy.main")
+    logger.info("Starting Proxy bootstrap")
 
     bus = EventBus(maxsize=settings.queue_maxsize)
     playback = PlaybackEngine()
@@ -210,9 +210,6 @@ async def _run() -> None:
 
     session_pool: SessionPool | None = None
 
-    async def _on_copilot_session_exit(_session_id: str, _rc: int) -> None:
-        return
-
     async def _reset_copilot_session() -> None:
         if session_pool is None:
             return
@@ -226,8 +223,6 @@ async def _run() -> None:
         allow_all=settings.copilot_allow_all,
         bootstrap_instructions=settings.copilot_bootstrap_instructions,
         instructions_path=settings.copilot_instructions_path,
-        use_acp=settings.copilot_use_acp,
-        on_session_exit=_on_copilot_session_exit,
         on_assistant_partial=_on_assistant_partial,
         on_assistant_final=_on_assistant_final,
     )
@@ -271,7 +266,7 @@ async def _run() -> None:
         )
         await wake_vad.start()
         logger.info(
-            "TARS listening for wake phrases '%s' (input_device=%s resolved=%s)",
+            "Proxy listening for wake phrases '%s' (input_device=%s resolved=%s)",
             settings.wake_aliases,
             settings.audio_input_device or "default",
             audio_io.resolved_input_device if audio_io.resolved_input_device is not None else "default",
@@ -301,7 +296,7 @@ async def _run() -> None:
 
 
 def cli() -> None:
-    parser = argparse.ArgumentParser(description="TARS voice assistant")
+    parser = argparse.ArgumentParser(description="Proxy voice assistant")
     parser.parse_args()
     asyncio.run(_run())
 

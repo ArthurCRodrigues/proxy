@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import uuid4
 
-from tars.types import AssistantState, Event, EventType
+from proxy.types import AssistantState, Event, EventType
 
 
 @dataclass
@@ -24,21 +24,17 @@ def _new_id() -> str:
 def apply_event(ctx: OrchestratorContext, event: Event) -> OrchestratorContext:
     state = ctx.state
 
+    # Global transitions
     if event.type == EventType.STOP:
         return OrchestratorContext(
             state=AssistantState.STOPPED,
             session_id=ctx.session_id,
             turn_id=ctx.turn_id,
         )
-    if event.type in (
-        EventType.SESSION_EXIT,
-        EventType.TOOL_START,
-        EventType.TOOL_END,
-    ):
-        return ctx
-    if event.type in (EventType.USER_SPEECH_START, EventType.USER_SPEECH_END, EventType.USER_PARTIAL):
+    if event.type in (EventType.ERROR, EventType.USER_PARTIAL):
         return ctx
 
+    # Per-state transitions
     if state == AssistantState.IDLE:
         if event.type == EventType.WAKE:
             return OrchestratorContext(
@@ -70,8 +66,6 @@ def apply_event(ctx: OrchestratorContext, event: Event) -> OrchestratorContext:
                 session_id=ctx.session_id,
                 turn_id=ctx.turn_id or _new_id(),
             )
-        if event.type == EventType.BARGE_IN:
-            return ctx
         raise InvalidTransitionError(f"{state} cannot handle {event.type}")
 
     if state == AssistantState.THINKING:
@@ -87,12 +81,6 @@ def apply_event(ctx: OrchestratorContext, event: Event) -> OrchestratorContext:
                 session_id=ctx.session_id,
                 turn_id=ctx.turn_id,
             )
-        if event.type == EventType.BARGE_IN:
-            return OrchestratorContext(
-                state=AssistantState.INTERRUPTING,
-                session_id=ctx.session_id,
-                turn_id=ctx.turn_id,
-            )
         raise InvalidTransitionError(f"{state} cannot handle {event.type}")
 
     if state == AssistantState.SPEAKING:
@@ -103,21 +91,6 @@ def apply_event(ctx: OrchestratorContext, event: Event) -> OrchestratorContext:
                 state=AssistantState.IDLE,
                 session_id=None,
                 turn_id=None,
-            )
-        if event.type == EventType.BARGE_IN:
-            return OrchestratorContext(
-                state=AssistantState.INTERRUPTING,
-                session_id=ctx.session_id,
-                turn_id=ctx.turn_id,
-            )
-        raise InvalidTransitionError(f"{state} cannot handle {event.type}")
-
-    if state == AssistantState.INTERRUPTING:
-        if event.type == EventType.INTERRUPT_ACK:
-            return OrchestratorContext(
-                state=AssistantState.LISTENING,
-                session_id=ctx.session_id,
-                turn_id=_new_id(),
             )
         raise InvalidTransitionError(f"{state} cannot handle {event.type}")
 

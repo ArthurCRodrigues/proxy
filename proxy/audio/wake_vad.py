@@ -10,11 +10,11 @@ from pathlib import Path
 from time import monotonic
 from typing import Any
 
-from tars.audio.io import AudioIO
-from tars.observability.logger import get_logger
-from tars.orchestrator.event_bus import EventBus
-from tars.stt.base import STTAdapter
-from tars.types import Event, EventType
+from proxy.audio.io import AudioIO
+from proxy.observability.logger import get_logger
+from proxy.orchestrator.event_bus import EventBus
+from proxy.stt.deepgram_adapter import DeepgramSTTAdapter
+from proxy.types import Event, EventType
 
 
 def _import_vosk() -> Any:
@@ -67,7 +67,7 @@ class WakeVadEngine:
         wake_retrigger_cooldown_ms: int = 1500,
         wake_rearm_guard_ms: int = 1200,
         wake_match_partial: bool = False,
-        stt_adapter: STTAdapter | None = None,
+        stt_adapter: DeepgramSTTAdapter | None = None,
         stt_gate_allow: Callable[[], bool] | None = None,
     ) -> None:
         self._event_bus = event_bus
@@ -79,7 +79,7 @@ class WakeVadEngine:
             parsed_aliases.insert(0, primary)
         self._wake_phrases = parsed_aliases
         self._vosk_model_path = Path(vosk_model_path)
-        self._logger = get_logger("tars.wake_vad")
+        self._logger = get_logger("proxy.wake_vad")
         self._task: asyncio.Task[None] | None = None
         self._running = False
         self._vad = VADTracker(
@@ -160,10 +160,7 @@ class WakeVadEngine:
             if self._debug_rms:
                 self._logger.debug("RMS: %.1f", rms)
             start_trigger, end_trigger = self._vad.step(rms=rms, chunk_ms=chunk_ms)
-            if start_trigger:
-                await self._event_bus.publish(Event(type=EventType.USER_SPEECH_START))
             if end_trigger:
-                await self._event_bus.publish(Event(type=EventType.USER_SPEECH_END))
                 if self._stt is not None and self._stt.ready() and can_send_stt:
                     await self._stt.end_utterance()
             if not self._wake_should_trigger():

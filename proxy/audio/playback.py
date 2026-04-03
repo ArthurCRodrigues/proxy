@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from tars.audio.assets import PcmAudio
+from proxy.audio.assets import PcmAudio
 
 
 def _import_sounddevice() -> Any:

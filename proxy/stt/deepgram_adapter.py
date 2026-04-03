@@ -7,8 +7,7 @@ from collections.abc import Callable
 from time import monotonic
 from urllib.parse import urlencode
 
-from tars.observability.logger import get_logger
-from tars.stt.base import STTAdapter
+from proxy.observability.logger import get_logger
 
 
 def extract_transcript(raw: str) -> tuple[str, bool, bool] | None:
@@ -29,7 +28,7 @@ def extract_transcript(raw: str) -> tuple[str, bool, bool] | None:
     return transcript, is_final, speech_final
 
 
-class DeepgramSTTAdapter(STTAdapter):
+class DeepgramSTTAdapter:
     def __init__(
         self,
         api_key: str,
@@ -60,7 +59,7 @@ class DeepgramSTTAdapter(STTAdapter):
         self._reconnect_max_attempts = reconnect_max_attempts
         self._reconnect_base_delay_ms = reconnect_base_delay_ms
 
-        self._logger = get_logger("tars.stt.deepgram")
+        self._logger = get_logger("proxy.stt.deepgram")
         self._ws = None
         self._listener_task: asyncio.Task[None] | None = None
         self._on_partial: Callable[[str], None] | None = None

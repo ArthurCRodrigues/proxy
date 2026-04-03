@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tars.stt.filtering import EchoFilter, SpeechGate, normalize_text
+from proxy.stt.filtering import EchoFilter, SpeechGate, normalize_text
 
 
 def test_normalize_text() -> None:

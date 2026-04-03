@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from tars.audio.wake_vad import VADTracker, contains_wake_phrase, extract_recognizer_text
+from proxy.audio.wake_vad import VADTracker, contains_wake_phrase, extract_recognizer_text
 
 
 def test_contains_wake_phrase_in_text_and_partial() -> None:
-    assert contains_wake_phrase('{"text":"hello tars"}', ["tars"])
-    assert contains_wake_phrase('{"partial":"stars can you"}', ["tars", "stars"])
-    assert not contains_wake_phrase('{"text":"guitars are loud"}', ["tars"])
-    assert not contains_wake_phrase('{"text":"hello"}', ["tars"])
-    assert not contains_wake_phrase("{}", ["tars"])
-    assert not contains_wake_phrase("not json", ["tars"])
+    assert contains_wake_phrase('{"text":"hello proxy"}', ["proxy"])
+    assert contains_wake_phrase('{"partial":"stars can you"}', ["proxy", "stars"])
+    assert not contains_wake_phrase('{"text":"guitars are loud"}', ["proxy"])
+    assert not contains_wake_phrase('{"text":"hello"}', ["proxy"])
+    assert not contains_wake_phrase("{}", ["proxy"])
+    assert not contains_wake_phrase("not json", ["proxy"])
 
 
 def test_vad_tracker_start_and_end() -> None:
@@ -34,8 +34,8 @@ def test_vad_tracker_start_and_end() -> None:
 
 
 def test_extract_recognizer_text() -> None:
-    text, partial = extract_recognizer_text('{"text":"hello tars"}')
-    assert text == "hello tars"
+    text, partial = extract_recognizer_text('{"text":"hello proxy"}')
+    assert text == "hello proxy"
     assert partial == ""
     assert extract_recognizer_text("not json") == ("", "")
 

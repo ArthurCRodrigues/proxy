@@ -1,2 +1,0 @@
-"""TARS voice assistant package."""
-

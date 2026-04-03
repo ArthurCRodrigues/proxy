@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from tars.audio.wake_vad import WakeVadEngine
+from proxy.audio.wake_vad import WakeVadEngine
 
 
 def test_wake_should_trigger_disabled() -> None:

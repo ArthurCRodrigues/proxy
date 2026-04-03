@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import wave
 
-from tars.audio.assets import choose_wake_sound, list_wake_wavs
+from proxy.audio.assets import choose_wake_sound, list_wake_wavs
 
 
 def _write_wav(path: Path) -> None:

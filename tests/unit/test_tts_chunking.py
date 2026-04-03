@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tars.tts.chunking import (
+from proxy.tts.chunking import (
     append_partial,
     consume_speakable_segments,
     merge_final,

@@ -5,9 +5,9 @@ import wave
 
 import pytest
 
-from tars.audio.assets import load_wav_pcm
-from tars.audio.io import frames_per_chunk, normalize_input_device, resolve_input_device
-from tars.audio.playback import split_pcm_chunks
+from proxy.audio.assets import load_wav_pcm
+from proxy.audio.io import frames_per_chunk, normalize_input_device, resolve_input_device
+from proxy.audio.playback import split_pcm_chunks
 
 
 def test_frames_per_chunk() -> None:

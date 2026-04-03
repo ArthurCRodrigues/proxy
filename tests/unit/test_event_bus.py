@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 
-from tars.orchestrator.event_bus import EventBus
-from tars.types import Event, EventType
+from proxy.orchestrator.event_bus import EventBus
+from proxy.types import Event, EventType
 
 
 def test_event_bus_round_trip() -> None:

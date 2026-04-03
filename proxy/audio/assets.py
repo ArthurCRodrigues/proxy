@@ -47,10 +47,6 @@ def load_wav_pcm(path: Path) -> PcmAudio:
     )
 
 
-def load_yes_audio(asset_path: str) -> PcmAudio:
-    return load_wav_pcm(resolve_asset_path(asset_path))
-
-
 def list_wake_wavs(wake_sounds_dir: str) -> list[Path]:
     directory = resolve_asset_path(wake_sounds_dir)
     if not directory.exists() or not directory.is_dir():

@@ -49,8 +49,8 @@ class Settings:
     audio_input_device: str = ""
     yes_asset_path: str = "assets/yes.wav"
     wake_sounds_dir: str = "assets/wake"
-    wake_phrase: str = "tars"
-    wake_aliases: str = "tars,stars,tarz"
+    wake_phrase: str = "proxy"
+    wake_aliases: str = "proxy,stars,tarz"
     vosk_model_path: str = "assets/models/vosk-model-small-en-us-0.15"
     vad_start_rms: float = 600.0
     vad_end_rms: float = 350.0
@@ -82,7 +82,6 @@ class Settings:
     copilot_allow_all: bool = True
     copilot_bootstrap_instructions: bool = True
     copilot_instructions_path: str = _default_copilot_instructions_path()
-    copilot_use_acp: bool = True
     tts_speak_partials: bool = True
     tts_partial_min_chars: int = 12
     tts_partial_force_flush_chars: int = 72
@@ -90,7 +89,7 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         _load_dotenv()
-        copilot_instructions_path = os.getenv("TARS_COPILOT_INSTRUCTIONS_PATH")
+        copilot_instructions_path = os.getenv("PROXY_COPILOT_INSTRUCTIONS_PATH")
         if (
             copilot_instructions_path is None
             or copilot_instructions_path.strip() == ""
@@ -101,86 +100,84 @@ class Settings:
             deepgram_api_key=os.getenv("DEEPGRAM_API_KEY", ""),
             elevenlabs_api_key=os.getenv("ELEVENLABS_API_KEY", ""),
             elevenlabs_voice_id=os.getenv("ELEVENLABS_VOICE_ID", ""),
-            elevenlabs_model_id=os.getenv("TARS_ELEVENLABS_MODEL_ID", "eleven_multilingual_v2"),
-            elevenlabs_output_format=os.getenv("TARS_ELEVENLABS_OUTPUT_FORMAT", "pcm_22050"),
+            elevenlabs_model_id=os.getenv("PROXY_ELEVENLABS_MODEL_ID", "eleven_multilingual_v2"),
+            elevenlabs_output_format=os.getenv("PROXY_ELEVENLABS_OUTPUT_FORMAT", "pcm_22050"),
             elevenlabs_fallback_output_formats=_parse_csv(
-                os.getenv("TARS_ELEVENLABS_FALLBACK_OUTPUT_FORMATS", "wav_22050")
+                os.getenv("PROXY_ELEVENLABS_FALLBACK_OUTPUT_FORMATS", "wav_22050")
             ),
-            elevenlabs_stability=float(os.getenv("TARS_ELEVENLABS_STABILITY", "0.45")),
+            elevenlabs_stability=float(os.getenv("PROXY_ELEVENLABS_STABILITY", "0.45")),
             elevenlabs_similarity_boost=float(
-                os.getenv("TARS_ELEVENLABS_SIMILARITY_BOOST", "0.85")
+                os.getenv("PROXY_ELEVENLABS_SIMILARITY_BOOST", "0.85")
             ),
-            elevenlabs_style=float(os.getenv("TARS_ELEVENLABS_STYLE", "0.25")),
-            elevenlabs_speed=float(os.getenv("TARS_ELEVENLABS_SPEED", "0.95")),
-            elevenlabs_use_speaker_boost=os.getenv("TARS_ELEVENLABS_USE_SPEAKER_BOOST", "1")
+            elevenlabs_style=float(os.getenv("PROXY_ELEVENLABS_STYLE", "0.25")),
+            elevenlabs_speed=float(os.getenv("PROXY_ELEVENLABS_SPEED", "0.95")),
+            elevenlabs_use_speaker_boost=os.getenv("PROXY_ELEVENLABS_USE_SPEAKER_BOOST", "1")
             in ("1", "true", "True"),
-            log_level=os.getenv("TARS_LOG_LEVEL", "INFO"),
-            queue_maxsize=int(os.getenv("TARS_QUEUE_MAXSIZE", "256")),
-            audio_sample_rate=int(os.getenv("TARS_AUDIO_SAMPLE_RATE", "16000")),
-            audio_channels=int(os.getenv("TARS_AUDIO_CHANNELS", "1")),
-            audio_chunk_ms=int(os.getenv("TARS_AUDIO_CHUNK_MS", "20")),
-            audio_input_queue_maxsize=int(os.getenv("TARS_AUDIO_INPUT_QUEUE_MAXSIZE", "128")),
-            audio_input_device=os.getenv("TARS_AUDIO_INPUT_DEVICE", ""),
-            yes_asset_path=os.getenv("TARS_YES_ASSET_PATH", "assets/yes.wav"),
-            wake_sounds_dir=os.getenv("TARS_WAKE_SOUNDS_DIR", "assets/wake"),
-            wake_phrase=os.getenv("TARS_WAKE_PHRASE", "tars"),
-            wake_aliases=os.getenv("TARS_WAKE_ALIASES", "tars,stars,tarz"),
+            log_level=os.getenv("PROXY_LOG_LEVEL", "INFO"),
+            queue_maxsize=int(os.getenv("PROXY_QUEUE_MAXSIZE", "256")),
+            audio_sample_rate=int(os.getenv("PROXY_AUDIO_SAMPLE_RATE", "16000")),
+            audio_channels=int(os.getenv("PROXY_AUDIO_CHANNELS", "1")),
+            audio_chunk_ms=int(os.getenv("PROXY_AUDIO_CHUNK_MS", "20")),
+            audio_input_queue_maxsize=int(os.getenv("PROXY_AUDIO_INPUT_QUEUE_MAXSIZE", "128")),
+            audio_input_device=os.getenv("PROXY_AUDIO_INPUT_DEVICE", ""),
+            yes_asset_path=os.getenv("PROXY_YES_ASSET_PATH", "assets/yes.wav"),
+            wake_sounds_dir=os.getenv("PROXY_WAKE_SOUNDS_DIR", "assets/wake"),
+            wake_phrase=os.getenv("PROXY_WAKE_PHRASE", "proxy"),
+            wake_aliases=os.getenv("PROXY_WAKE_ALIASES", "proxy,stars,tarz"),
             vosk_model_path=os.getenv(
-                "TARS_VOSK_MODEL_PATH", "assets/models/vosk-model-small-en-us-0.15"
+                "PROXY_VOSK_MODEL_PATH", "assets/models/vosk-model-small-en-us-0.15"
             ),
-            vad_start_rms=float(os.getenv("TARS_VAD_START_RMS", "600.0")),
-            vad_end_rms=float(os.getenv("TARS_VAD_END_RMS", "350.0")),
-            vad_end_silence_ms=int(os.getenv("TARS_VAD_END_SILENCE_MS", "700")),
-            wake_debug_transcripts=os.getenv("TARS_WAKE_DEBUG_TRANSCRIPTS", "0") in ("1", "true", "True"),
-            wake_debug_rms=os.getenv("TARS_WAKE_DEBUG_RMS", "0") in ("1", "true", "True"),
-            wake_retrigger_cooldown_ms=int(os.getenv("TARS_WAKE_RETRIGGER_COOLDOWN_MS", "1500")),
-            wake_rearm_guard_ms=int(os.getenv("TARS_WAKE_REARM_GUARD_MS", "1200")),
-            wake_match_partial=os.getenv("TARS_WAKE_MATCH_PARTIAL", "0")
+            vad_start_rms=float(os.getenv("PROXY_VAD_START_RMS", "600.0")),
+            vad_end_rms=float(os.getenv("PROXY_VAD_END_RMS", "350.0")),
+            vad_end_silence_ms=int(os.getenv("PROXY_VAD_END_SILENCE_MS", "700")),
+            wake_debug_transcripts=os.getenv("PROXY_WAKE_DEBUG_TRANSCRIPTS", "0") in ("1", "true", "True"),
+            wake_debug_rms=os.getenv("PROXY_WAKE_DEBUG_RMS", "0") in ("1", "true", "True"),
+            wake_retrigger_cooldown_ms=int(os.getenv("PROXY_WAKE_RETRIGGER_COOLDOWN_MS", "1500")),
+            wake_rearm_guard_ms=int(os.getenv("PROXY_WAKE_REARM_GUARD_MS", "1200")),
+            wake_match_partial=os.getenv("PROXY_WAKE_MATCH_PARTIAL", "0")
             in ("1", "true", "True"),
-            deepgram_model=os.getenv("TARS_DEEPGRAM_MODEL", "nova-3"),
-            deepgram_language=os.getenv("TARS_DEEPGRAM_LANGUAGE", "en-US"),
-            deepgram_endpointing_enabled=os.getenv("TARS_DEEPGRAM_ENDPOINTING_ENABLED", "1")
+            deepgram_model=os.getenv("PROXY_DEEPGRAM_MODEL", "nova-3"),
+            deepgram_language=os.getenv("PROXY_DEEPGRAM_LANGUAGE", "en-US"),
+            deepgram_endpointing_enabled=os.getenv("PROXY_DEEPGRAM_ENDPOINTING_ENABLED", "1")
             in ("1", "true", "True"),
-            deepgram_endpointing_ms=int(os.getenv("TARS_DEEPGRAM_ENDPOINTING_MS", "700")),
-            deepgram_utterance_end_ms=int(os.getenv("TARS_DEEPGRAM_UTTERANCE_END_MS", "3500")),
-            deepgram_punctuate=os.getenv("TARS_DEEPGRAM_PUNCTUATE", "1")
+            deepgram_endpointing_ms=int(os.getenv("PROXY_DEEPGRAM_ENDPOINTING_MS", "700")),
+            deepgram_utterance_end_ms=int(os.getenv("PROXY_DEEPGRAM_UTTERANCE_END_MS", "3500")),
+            deepgram_punctuate=os.getenv("PROXY_DEEPGRAM_PUNCTUATE", "1")
             in ("1", "true", "True"),
-            deepgram_smart_format=os.getenv("TARS_DEEPGRAM_SMART_FORMAT", "1")
+            deepgram_smart_format=os.getenv("PROXY_DEEPGRAM_SMART_FORMAT", "1")
             in ("1", "true", "True"),
-            deepgram_keyterms=_parse_csv(os.getenv("TARS_DEEPGRAM_KEYTERMS", "")),
-            deepgram_interim_results=os.getenv("TARS_DEEPGRAM_INTERIM_RESULTS", "1")
+            deepgram_keyterms=_parse_csv(os.getenv("PROXY_DEEPGRAM_KEYTERMS", "")),
+            deepgram_interim_results=os.getenv("PROXY_DEEPGRAM_INTERIM_RESULTS", "1")
             in ("1", "true", "True"),
             deepgram_reconnect_max_attempts=int(
-                os.getenv("TARS_DEEPGRAM_RECONNECT_MAX_ATTEMPTS", "3")
+                os.getenv("PROXY_DEEPGRAM_RECONNECT_MAX_ATTEMPTS", "3")
             ),
             deepgram_reconnect_base_delay_ms=int(
-                os.getenv("TARS_DEEPGRAM_RECONNECT_BASE_DELAY_MS", "200")
+                os.getenv("PROXY_DEEPGRAM_RECONNECT_BASE_DELAY_MS", "200")
             ),
-            stt_gate_enabled=os.getenv("TARS_STT_GATE_ENABLED", "1") in ("1", "true", "True"),
-            stt_gate_hold_ms=int(os.getenv("TARS_STT_GATE_HOLD_MS", "900")),
-            stt_deecho_enabled=os.getenv("TARS_STT_DEECHO_ENABLED", "1")
+            stt_gate_enabled=os.getenv("PROXY_STT_GATE_ENABLED", "1") in ("1", "true", "True"),
+            stt_gate_hold_ms=int(os.getenv("PROXY_STT_GATE_HOLD_MS", "900")),
+            stt_deecho_enabled=os.getenv("PROXY_STT_DEECHO_ENABLED", "1")
             in ("1", "true", "True"),
             stt_deecho_similarity_threshold=float(
-                os.getenv("TARS_STT_DEECHO_SIMILARITY_THRESHOLD", "0.78")
+                os.getenv("PROXY_STT_DEECHO_SIMILARITY_THRESHOLD", "0.78")
             ),
-            listening_timeout_ms=int(os.getenv("TARS_LISTENING_TIMEOUT_MS", "10000")),
-            cancel_commands=os.getenv("TARS_CANCEL_COMMANDS", "nevermind,never mind,quit"),
-            copilot_command=os.getenv("TARS_COPILOT_COMMAND", "copilot"),
-            copilot_model=os.getenv("TARS_COPILOT_MODEL", ""),
-            copilot_allow_all=os.getenv("TARS_COPILOT_ALLOW_ALL", "1")
+            listening_timeout_ms=int(os.getenv("PROXY_LISTENING_TIMEOUT_MS", "10000")),
+            cancel_commands=os.getenv("PROXY_CANCEL_COMMANDS", "nevermind,never mind,quit"),
+            copilot_command=os.getenv("PROXY_COPILOT_COMMAND", "copilot"),
+            copilot_model=os.getenv("PROXY_COPILOT_MODEL", ""),
+            copilot_allow_all=os.getenv("PROXY_COPILOT_ALLOW_ALL", "1")
             in ("1", "true", "True"),
             copilot_bootstrap_instructions=os.getenv(
-                "TARS_COPILOT_BOOTSTRAP_INSTRUCTIONS", "1"
+                "PROXY_COPILOT_BOOTSTRAP_INSTRUCTIONS", "1"
             )
             in ("1", "true", "True"),
             copilot_instructions_path=copilot_instructions_path,
-            copilot_use_acp=os.getenv("TARS_COPILOT_USE_ACP", "1")
+            tts_speak_partials=os.getenv("PROXY_TTS_SPEAK_PARTIALS", "1")
             in ("1", "true", "True"),
-            tts_speak_partials=os.getenv("TARS_TTS_SPEAK_PARTIALS", "1")
-            in ("1", "true", "True"),
-            tts_partial_min_chars=max(1, int(os.getenv("TARS_TTS_PARTIAL_MIN_CHARS", "12"))),
+            tts_partial_min_chars=max(1, int(os.getenv("PROXY_TTS_PARTIAL_MIN_CHARS", "12"))),
             tts_partial_force_flush_chars=max(
                 0,
-                int(os.getenv("TARS_TTS_PARTIAL_FORCE_FLUSH_CHARS", "72")),
+                int(os.getenv("PROXY_TTS_PARTIAL_FORCE_FLUSH_CHARS", "72")),
             ),
         )

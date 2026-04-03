@@ -5,13 +5,11 @@ from io import BytesIO
 import wave
 
 from elevenlabs.core.api_error import ApiError
-from tars.audio.assets import PcmAudio
-from tars.observability.logger import get_logger
-
-from tars.tts.base import TTSAdapter
+from proxy.audio.assets import PcmAudio
+from proxy.observability.logger import get_logger
 
 
-class ElevenLabsTTSAdapter(TTSAdapter):
+class ElevenLabsTTSAdapter:
     def __init__(
         self,
         api_key: str,
@@ -39,7 +37,7 @@ class ElevenLabsTTSAdapter(TTSAdapter):
         self._use_speaker_boost = use_speaker_boost
         self._cancelled = False
         self._lock = asyncio.Lock()
-        self._logger = get_logger("tars.tts.elevenlabs")
+        self._logger = get_logger("proxy.tts.elevenlabs")
 
     async def synthesize_text(self, text: str) -> PcmAudio:
         async with self._lock:

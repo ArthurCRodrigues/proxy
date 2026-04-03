@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import asyncio
 
-from tars.orchestrator.engine import Orchestrator
-from tars.orchestrator.event_bus import EventBus
-from tars.types import AssistantState, Event, EventType
+from proxy.orchestrator.engine import Orchestrator
+from proxy.orchestrator.event_bus import EventBus
+from proxy.types import AssistantState, Event, EventType
 
 
 def test_listening_timeout_resets_on_speech_activity() -> None:
@@ -21,7 +21,7 @@ def test_listening_timeout_resets_on_speech_activity() -> None:
         assert orchestrator.context.state == AssistantState.LISTENING
 
         await asyncio.sleep(0.12)
-        await orchestrator.handle_event(Event(type=EventType.USER_SPEECH_START))
+        await orchestrator.handle_event(Event(type=EventType.USER_PARTIAL, payload={"text": "hello"}))
         assert orchestrator.context.state == AssistantState.LISTENING
 
         await asyncio.sleep(0.12)
