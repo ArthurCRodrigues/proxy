@@ -103,11 +103,6 @@ class CopilotBridge:
         self._bootstrapped_sessions.clear()
         await self._stop_acp()
 
-    async def rollover_session(self) -> CopilotSessionHandle:
-        handle = await self.prewarm_session()
-        self._active_session = handle
-        return handle
-
     async def _cancel_active_task(self) -> None:
         if self._active_task is not None:
             if not self._active_task.done():

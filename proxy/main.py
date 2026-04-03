@@ -229,20 +229,19 @@ async def _run() -> None:
     tts_task = asyncio.create_task(_tts_loop())
 
     async def on_wake() -> None:
-        await session_pool.activate_standby()
+        await session_pool.activate()
         wake_audio = load_random_wake_audio(settings.wake_sounds_dir, settings.yes_asset_path)
         speech_gate.block()
         echo_filter.record_assistant_text("yes")
         await playback.play_pcm(wake_audio)
-        await session_pool.rollover()
 
     orchestrator = Orchestrator(bus, on_wake=on_wake, copilot_bridge=copilot)
     orchestrator.set_listening_timeout(settings.listening_timeout_ms)
     runner = asyncio.create_task(orchestrator.run())
 
     try:
-        await session_pool.ensure_standby()
-        logger.info("Copilot standby session prewarmed and bootstrapping")
+        await session_pool.ensure_active()
+        logger.info("Copilot session created and bootstrapping")
         wake_vad = WakeVadEngine(
             event_bus=bus,
             audio_io=audio_io,
