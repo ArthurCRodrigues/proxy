@@ -138,7 +138,7 @@ class DeepgramSTTAdapter:
         msg_type = payload.get("type", "")
 
         if msg_type == "UtteranceEnd":
-            final_text = (self._last_partial_text or self._assembled_partial_text).strip()
+            final_text = (self._assembled_partial_text or self._last_partial_text).strip()
             if final_text:
                 self._last_partial_text = ""
                 self._assembled_partial_text = ""
