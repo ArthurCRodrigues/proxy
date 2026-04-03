@@ -230,7 +230,6 @@ async def _run() -> None:
 
     async def on_wake() -> None:
         await session_pool.activate_standby()
-        await copilot.bootstrap_active_session_background()
         wake_audio = load_random_wake_audio(settings.wake_sounds_dir, settings.yes_asset_path)
         speech_gate.block()
         echo_filter.record_assistant_text("yes")
@@ -243,7 +242,7 @@ async def _run() -> None:
 
     try:
         await session_pool.ensure_standby()
-        logger.info("Copilot standby session prewarmed at startup")
+        logger.info("Copilot standby session prewarmed and bootstrapping")
         wake_vad = WakeVadEngine(
             event_bus=bus,
             audio_io=audio_io,

@@ -170,7 +170,9 @@ class CopilotBridge:
 
     async def bootstrap_active_session_background(self) -> None:
         session = await self.ensure_session()
-        session_id = session.session_id
+        self._bootstrap_session_background(session.session_id)
+
+    def _bootstrap_session_background(self, session_id: str) -> None:
         if session_id in self._bootstrapped_sessions:
             return
         if self._bootstrap_task is not None and not self._bootstrap_task.done():
