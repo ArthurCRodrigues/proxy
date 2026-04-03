@@ -1,6 +1,6 @@
-# TARS
+# PROXY
 
-TARS is a voice-first coding runtime built around Copilot CLI. It listens for a wake phrase, captures speech, sends prompts to Copilot, and speaks responses back with low-latency streaming.
+PROXY is a voice-first coding runtime built around Copilot CLI. It listens for a wake phrase, captures speech, sends prompts to Copilot, and speaks responses back with low-latency streaming.
 
 ## Architecture at a glance
 
@@ -53,7 +53,7 @@ Key transitions:
 
 ## Event model
 
-Canonical event types are defined in `tars/types.py`:
+Canonical event types are defined in `PROXY/types.py`:
 
 - User/audio control: `WAKE`, `USER_SPEECH_START`, `USER_SPEECH_END`, `USER_PARTIAL`, `USER_FINAL`, `BARGE_IN`, `CANCEL`, `LISTENING_TIMEOUT`
 - Assistant/Copilot: `ASSISTANT_PARTIAL`, `ASSISTANT_FINAL`, `TOOL_START`, `TOOL_END`, `SESSION_EXIT`
@@ -83,9 +83,9 @@ TTS is event-driven:
 - when partial speech is enabled, final dedupe avoids replaying already-spoken content
 
 Chunking controls:
-- `TARS_TTS_SPEAK_PARTIALS`
-- `TARS_TTS_PARTIAL_MIN_CHARS`
-- `TARS_TTS_PARTIAL_FORCE_FLUSH_CHARS` (`0` disables forced boundaryless flush)
+- `PROXY_TTS_SPEAK_PARTIALS`
+- `PROXY_TTS_PARTIAL_MIN_CHARS`
+- `PROXY_TTS_PARTIAL_FORCE_FLUSH_CHARS` (`0` disables forced boundaryless flush)
 
 ElevenLabs adapter:
 - default output `pcm_22050`
@@ -94,7 +94,7 @@ ElevenLabs adapter:
 
 ## Anti self-listening protections
 
-TARS uses two layers to reduce transcribing its own voice:
+PROXY uses two layers to reduce transcribing its own voice:
 
 1. `SpeechGate`: blocks STT acceptance for a hold window after TTS playback starts.
 2. `EchoFilter`: keeps recent assistant text and rejects STT transcripts with strong similarity.
@@ -107,16 +107,16 @@ Additionally, STT forwarding is gated by orchestrator state (`LISTENING` only).
 - `websockets`, `websockets.client`, `asyncio`, `httpcore`, `httpx` => warning-level
 
 Useful runtime logs:
-- state transitions (`tars.orchestrator`)
-- wake events (`tars.wake_vad`)
-- Copilot prompt/session lifecycle (`tars.copilot.bridge`)
-- STT partial/final and drops (`tars.main`, `tars.stt.deepgram`)
-- TTS synthesis/playback issues (`tars.tts.elevenlabs`)
+- state transitions (`PROXY.orchestrator`)
+- wake events (`PROXY.wake_vad`)
+- Copilot prompt/session lifecycle (`PROXY.copilot.bridge`)
+- STT partial/final and drops (`PROXY.main`, `PROXY.stt.deepgram`)
+- TTS synthesis/playback issues (`PROXY.tts.elevenlabs`)
 
 ## Repository structure
 
 ```text
-tars/
+PROXY/
   main.py                    # Wiring and runtime orchestration
   config.py                  # Environment-backed settings
   types.py                   # Event/state enums and event dataclass
@@ -162,7 +162,7 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env
-python -m tars.main
+python -m PROXY.main
 ```
 
 ## Environment configuration
@@ -170,7 +170,7 @@ python -m tars.main
 Use `.env.example` as the source of truth. Main groups:
 
 - API credentials: `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`
-- Runtime: `TARS_LOG_LEVEL`, queue sizing
+- Runtime: `PROXY_LOG_LEVEL`, queue sizing
 - Audio I/O: sample rate/channels/chunk/device
 - Wake/VAD: wake phrase/aliases, Vosk path, RMS thresholds, cooldowns, debug flags
 - Deepgram STT: model/language/endpointing/utterance, keyterms, reconnect
@@ -184,7 +184,7 @@ Place a Vosk model at:
 
 `assets/models/vosk-model-small-en-us-0.15`
 
-Or set a custom path with `TARS_VOSK_MODEL_PATH`.
+Or set a custom path with `PROXY_VOSK_MODEL_PATH`.
 
 ## Benchmarking Copilot latency
 
