@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import audioop
 import json
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
 from typing import Any
@@ -58,12 +56,7 @@ class WakeVadEngine:
         wake_phrase: str,
         wake_aliases: str,
         vosk_model_path: str,
-        vad_start_rms: float = 600.0,
-        vad_end_rms: float = 350.0,
-        vad_end_silence_ms: int = 700,
-        vad_finalize_stt: bool = True,
         debug_transcripts: bool = False,
-        debug_rms: bool = False,
         wake_enabled: Callable[[], bool] | None = None,
         wake_retrigger_cooldown_ms: int = 1500,
         wake_rearm_guard_ms: int = 1200,
@@ -83,18 +76,11 @@ class WakeVadEngine:
         self._logger = get_logger("proxy.wake_vad")
         self._task: asyncio.Task[None] | None = None
         self._running = False
-        self._vad = VADTracker(
-            start_rms=vad_start_rms,
-            end_rms=vad_end_rms,
-            end_silence_ms=vad_end_silence_ms,
-        )
         self._debug_transcripts = debug_transcripts
-        self._debug_rms = debug_rms
         self._wake_enabled = wake_enabled
         self._wake_retrigger_cooldown_s = wake_retrigger_cooldown_ms / 1000.0
         self._wake_rearm_guard_s = wake_rearm_guard_ms / 1000.0
         self._wake_match_partial = wake_match_partial
-        self._vad_finalize_stt = vad_finalize_stt
         self._last_wake_at = 0.0
         self._wake_armed = True
         self._idle_entered_at = monotonic() - self._wake_rearm_guard_s
@@ -147,7 +133,6 @@ class WakeVadEngine:
         self._audio_io.stop()
 
     async def _run(self) -> None:
-        chunk_ms = self._audio_io.chunk_ms
         assert self._recognizer is not None
 
         while self._running:
@@ -158,13 +143,6 @@ class WakeVadEngine:
             can_send_stt = self._stt_gate_allow() if self._stt_gate_allow is not None else True
             if self._stt is not None and self._stt.ready() and can_send_stt:
                 await self._stt.push_audio(chunk)
-            rms = float(audioop.rms(chunk, 2))
-            if self._debug_rms:
-                self._logger.debug("RMS: %.1f", rms)
-            start_trigger, end_trigger = self._vad.step(rms=rms, chunk_ms=chunk_ms)
-            if end_trigger:
-                if self._vad_finalize_stt and self._stt is not None and self._stt.ready() and can_send_stt:
-                    await self._stt.end_utterance()
             if not self._wake_should_trigger():
                 continue
             if self._recognizer.AcceptWaveform(chunk):
@@ -205,16 +183,13 @@ class WakeVadEngine:
             wake_enabled = self._wake_enabled()
             if wake_enabled != self._wake_enabled_last:
                 self._reset_wake_recognizer()
-                self._vad.reset()
                 now = monotonic()
                 if wake_enabled:
                     if self._wake_enabled_last is None:
-                        # Initial startup should not be blocked by rearm guard.
                         self._idle_entered_at = now - self._wake_rearm_guard_s
                     else:
                         self._idle_entered_at = now
                 else:
-                    # Rearm wake triggering only after leaving IDLE.
                     self._wake_armed = True
                     self._idle_entered_at = now
                 self._wake_enabled_last = wake_enabled
@@ -238,37 +213,3 @@ class WakeVadEngine:
                 reset()
             except Exception:
                 self._logger.debug("Wake recognizer reset failed", exc_info=True)
-
-
-@dataclass
-class VADTracker:
-    start_rms: float
-    end_rms: float
-    end_silence_ms: int
-    speech_active: bool = False
-    silence_ms: int = 0
-
-    def reset(self) -> None:
-        self.speech_active = False
-        self.silence_ms = 0
-
-    def step(self, rms: float, chunk_ms: int) -> tuple[bool, bool]:
-        start_trigger = False
-        end_trigger = False
-
-        if not self.speech_active and rms >= self.start_rms:
-            self.speech_active = True
-            self.silence_ms = 0
-            start_trigger = True
-
-        if self.speech_active:
-            if rms <= self.end_rms:
-                self.silence_ms += chunk_ms
-            else:
-                self.silence_ms = 0
-            if self.silence_ms >= self.end_silence_ms:
-                self.speech_active = False
-                self.silence_ms = 0
-                end_trigger = True
-
-        return start_trigger, end_trigger

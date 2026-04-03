@@ -4,7 +4,6 @@ import asyncio
 import json
 import re
 from collections.abc import Callable
-from time import monotonic
 from urllib.parse import urlencode
 
 from proxy.observability.logger import get_logger
@@ -66,11 +65,8 @@ class DeepgramSTTAdapter:
         self._on_final: Callable[[str], None] | None = None
         self._lock = asyncio.Lock()
         self._stopped = False
-        self._finalize_requested = False
         self._last_partial_text = ""
         self._assembled_partial_text = ""
-        self._last_partial_change_at = 0.0
-        self._unsolicited_final_hold_s = max(1.0, self._utterance_end_ms / 1000.0)
 
     def _url(self) -> str:
         params: list[tuple[str, str]] = [
@@ -101,10 +97,8 @@ class DeepgramSTTAdapter:
             if sample_rate is not None:
                 self._sample_rate = sample_rate
             self._stopped = False
-            self._finalize_requested = False
             self._last_partial_text = ""
             self._assembled_partial_text = ""
-            self._last_partial_change_at = 0.0
 
             import websockets
 
@@ -144,40 +138,11 @@ class DeepgramSTTAdapter:
             final_text = self._assemble_final_text(transcript)
             if not final_text:
                 return
-            if not self._finalize_requested and not speech_final:
-                stable_for_s = monotonic() - self._last_partial_change_at
-                norm_last_partial = _normalize_for_compare(self._last_partial_text)
-                norm_final_text = _normalize_for_compare(final_text)
-                stable_match = bool(norm_last_partial) and (
-                    norm_final_text == norm_last_partial
-                    or norm_final_text.endswith(norm_last_partial)
-                    or norm_last_partial in norm_final_text
-                )
-                if (
-                    stable_match
-                    and stable_for_s >= self._unsolicited_final_hold_s
-                ):
-                    self._logger.debug(
-                        "Accepting unsolicited Deepgram final after %.2fs stable partial",
-                        stable_for_s,
-                    )
-                else:
-                    self._logger.debug(
-                        "Ignoring unsolicited Deepgram final before local utterance finalize"
-                    )
-                    if self._on_partial is not None:
-                        self._on_partial(final_text)
-                    return
-            self._finalize_requested = False
             self._last_partial_text = ""
             self._assembled_partial_text = ""
-            self._last_partial_change_at = 0.0
             if self._on_final is not None:
                 self._on_final(final_text)
         else:
-            now = monotonic()
-            if transcript != self._last_partial_text:
-                self._last_partial_change_at = now
             self._last_partial_text = transcript
             self._assembled_partial_text = _merge_partial_utterance(
                 self._assembled_partial_text,
@@ -193,16 +158,6 @@ class DeepgramSTTAdapter:
             await self._ws.send(data)
         except Exception as exc:
             self._logger.error("Failed sending audio to Deepgram: %s", exc)
-
-    async def end_utterance(self) -> None:
-        if self._ws is None:
-            return
-        self._finalize_requested = True
-        try:
-            await self._ws.send('{"type":"Finalize"}')
-        except Exception as exc:
-            self._finalize_requested = False
-            self._logger.error("Failed finalizing Deepgram utterance: %s", exc)
 
     async def cancel(self) -> None:
         async with self._lock:
@@ -254,10 +209,8 @@ class DeepgramSTTAdapter:
             except Exception:
                 pass
         self._ws = None
-        self._finalize_requested = False
         self._last_partial_text = ""
         self._assembled_partial_text = ""
-        self._last_partial_change_at = 0.0
 
     def _assemble_final_text(self, final_text: str) -> str:
         candidate = final_text.strip() or self._last_partial_text.strip() or self._assembled_partial_text.strip()

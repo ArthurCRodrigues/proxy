@@ -52,12 +52,7 @@ class Settings:
     wake_phrase: str = "proxy"
     wake_aliases: str = "proxy,stars,tarz"
     vosk_model_path: str = "assets/models/vosk-model-small-en-us-0.15"
-    vad_start_rms: float = 600.0
-    vad_end_rms: float = 350.0
-    vad_end_silence_ms: int = 700
-    vad_finalize_stt: bool = True
     wake_debug_transcripts: bool = False
-    wake_debug_rms: bool = False
     wake_retrigger_cooldown_ms: int = 1500
     wake_rearm_guard_ms: int = 1200
     wake_match_partial: bool = False
@@ -127,12 +122,7 @@ class Settings:
             vosk_model_path=os.getenv(
                 "PROXY_VOSK_MODEL_PATH", "assets/models/vosk-model-small-en-us-0.15"
             ),
-            vad_start_rms=float(os.getenv("PROXY_VAD_START_RMS", "600.0")),
-            vad_end_rms=float(os.getenv("PROXY_VAD_END_RMS", "350.0")),
-            vad_end_silence_ms=int(os.getenv("PROXY_VAD_END_SILENCE_MS", "700")),
-            vad_finalize_stt=os.getenv("PROXY_VAD_FINALIZE_STT", "1") in ("1", "true", "True"),
             wake_debug_transcripts=os.getenv("PROXY_WAKE_DEBUG_TRANSCRIPTS", "0") in ("1", "true", "True"),
-            wake_debug_rms=os.getenv("PROXY_WAKE_DEBUG_RMS", "0") in ("1", "true", "True"),
             wake_retrigger_cooldown_ms=int(os.getenv("PROXY_WAKE_RETRIGGER_COOLDOWN_MS", "1500")),
             wake_rearm_guard_ms=int(os.getenv("PROXY_WAKE_REARM_GUARD_MS", "1200")),
             wake_match_partial=os.getenv("PROXY_WAKE_MATCH_PARTIAL", "0")

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from proxy.audio.wake_vad import VADTracker, contains_wake_phrase, extract_recognizer_text
+from proxy.audio.wake_vad import contains_wake_phrase, extract_recognizer_text
 
 
 def test_contains_wake_phrase_in_text_and_partial() -> None:
@@ -10,27 +10,6 @@ def test_contains_wake_phrase_in_text_and_partial() -> None:
     assert not contains_wake_phrase('{"text":"hello"}', ["proxy"])
     assert not contains_wake_phrase("{}", ["proxy"])
     assert not contains_wake_phrase("not json", ["proxy"])
-
-
-def test_vad_tracker_start_and_end() -> None:
-    vad = VADTracker(start_rms=600.0, end_rms=350.0, end_silence_ms=60)
-
-    start, end = vad.step(rms=700.0, chunk_ms=20)
-    assert start is True
-    assert end is False
-    assert vad.speech_active is True
-
-    start, end = vad.step(rms=200.0, chunk_ms=20)
-    assert (start, end) == (False, False)
-    assert vad.speech_active is True
-
-    start, end = vad.step(rms=200.0, chunk_ms=20)
-    assert (start, end) == (False, False)
-    assert vad.speech_active is True
-
-    start, end = vad.step(rms=200.0, chunk_ms=20)
-    assert (start, end) == (False, True)
-    assert vad.speech_active is False
 
 
 def test_extract_recognizer_text() -> None:
