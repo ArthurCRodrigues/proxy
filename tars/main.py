@@ -224,19 +224,16 @@ async def _run() -> None:
         command=settings.copilot_command,
         model=settings.copilot_model,
         allow_all=settings.copilot_allow_all,
-        bootstrap_instructions=settings.copilot_bootstrap_instructions,
         instructions_path=settings.copilot_instructions_path,
-        use_acp=settings.copilot_use_acp,
         on_session_exit=_on_copilot_session_exit,
         on_assistant_partial=_on_assistant_partial,
         on_assistant_final=_on_assistant_final,
     )
+    logger.info("Instructions path: %s", settings.copilot_instructions_path)
     session_pool = SessionPool(bridge=copilot)
     tts_task = asyncio.create_task(_tts_loop())
 
     async def on_wake() -> None:
-        await session_pool.activate_standby()
-        await copilot.bootstrap_active_session_background()
         wake_audio = load_random_wake_audio(settings.wake_sounds_dir, settings.yes_asset_path)
         speech_gate.block()
         echo_filter.record_assistant_text("yes")

@@ -10,7 +10,7 @@ Mic (sounddevice) -> AudioIO -> WakeVadEngine (Vosk + RMS VAD) -> EventBus
                                                      +-> Deepgram STT (partial/final)
 
 EventBus <-> Orchestrator (state + turn/session routing) <-> CopilotBridge
-                                                           (ACP warm process or subprocess JSONL)
+                                                           (ACP warm process)
 
 Copilot events -> TTS chunking -> ElevenLabs adapter -> PlaybackEngine -> Speaker
 ```
@@ -18,7 +18,7 @@ Copilot events -> TTS chunking -> ElevenLabs adapter -> PlaybackEngine -> Speake
 Core design:
 - local control loop for wake, VAD, state, cancellation, anti-echo gating
 - cloud STT/TTS for quality
-- persistent Copilot context with session pool and ACP default
+- persistent Copilot context with session pool and ACP
 
 ## Runtime lifecycle
 
@@ -63,10 +63,7 @@ Each event has `event_id`, `ts`, and optional `session_id`/`turn_id`.
 
 ## Copilot integration
 
-`CopilotBridge` supports two modes:
-
-1. **ACP mode (default)**: starts `copilot --acp --stdio`, initializes JSON-RPC, opens sessions via `session/new`, sends prompts via `session/prompt`, and streams partials from `session/update`.
-2. **Subprocess JSONL mode**: runs `copilot -p ... --output-format json` and parses JSON lines.
+`CopilotBridge` uses ACP only: starts `copilot --acp --stdio`, initializes JSON-RPC, opens sessions via `session/new`, sends prompts via `session/prompt`, and streams partials from `session/update`.
 
 Session behavior:
 - standby + active session pool (`SessionPool`)
@@ -75,7 +72,7 @@ Session behavior:
 - `start new session` voice command resets active Copilot context
 
 Bootstrap behavior:
-- if enabled, prepends `copilot-instructions.md` content to first prompt in a session
+- if enabled, each new session is bootstrapped immediately at session creation (including ACP prewarm), then user prompts run without re-prepending bootstrap content
 
 ## Speech pipeline
 
@@ -178,7 +175,7 @@ Use `.env.example` as the source of truth. Main groups:
 - Wake/VAD: wake phrase/aliases, Vosk path, RMS thresholds, cooldowns, debug flags
 - Deepgram STT: model/language/endpointing/utterance, keyterms, reconnect
 - Speech turn controls: STT gate/de-echo/listening timeout/cancel commands
-- Copilot bridge: command/model/allow-all/bootstrap/ACP toggle
+- Copilot bridge: command/model/allow-all/bootstrap
 - Assistant speech output: partial controls and chunk thresholds
 
 ## Wake model setup

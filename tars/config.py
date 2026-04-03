@@ -80,9 +80,7 @@ class Settings:
     copilot_command: str = "copilot"
     copilot_model: str = ""
     copilot_allow_all: bool = True
-    copilot_bootstrap_instructions: bool = True
     copilot_instructions_path: str = _default_copilot_instructions_path()
-    copilot_use_acp: bool = True
     tts_speak_partials: bool = True
     tts_partial_min_chars: int = 12
     tts_partial_force_flush_chars: int = 72
@@ -169,13 +167,7 @@ class Settings:
             copilot_model=os.getenv("TARS_COPILOT_MODEL", ""),
             copilot_allow_all=os.getenv("TARS_COPILOT_ALLOW_ALL", "1")
             in ("1", "true", "True"),
-            copilot_bootstrap_instructions=os.getenv(
-                "TARS_COPILOT_BOOTSTRAP_INSTRUCTIONS", "1"
-            )
-            in ("1", "true", "True"),
             copilot_instructions_path=copilot_instructions_path,
-            copilot_use_acp=os.getenv("TARS_COPILOT_USE_ACP", "1")
-            in ("1", "true", "True"),
             tts_speak_partials=os.getenv("TARS_TTS_SPEAK_PARTIALS", "1")
             in ("1", "true", "True"),
             tts_partial_min_chars=max(1, int(os.getenv("TARS_TTS_PARTIAL_MIN_CHARS", "12"))),
