@@ -51,7 +51,7 @@ class CopilotBridge:
         self._bootstrap_instructions = bootstrap_instructions
         self._instructions_path = instructions_path
         self._use_acp = use_acp
-        self._logger = get_logger("tars.copilot.bridge")
+        self._logger = get_logger("proxy.copilot.bridge")
         self._active_task: asyncio.Task[None] | None = None
         self._bootstrap_task: asyncio.Task[None] | None = None
         self._active_session: CopilotSessionHandle | None = None

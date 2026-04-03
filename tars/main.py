@@ -193,6 +193,7 @@ async def _run() -> None:
                 cleaned = text.strip()
                 if not cleaned:
                     continue
+                logger.info("TTS_OUTBOUND_CHUNK: %s", cleaned)
                 speech_gate.block()
                 echo_filter.record_assistant_text(cleaned)
                 try:
