@@ -118,6 +118,7 @@ class DeepgramSTTAdapter:
             async for raw in self._ws:
                 if not isinstance(raw, str):
                     continue
+                self._logger.debug("Deepgram raw: %s", raw[:500])
                 self._handle_message(raw)
         except asyncio.CancelledError:
             raise

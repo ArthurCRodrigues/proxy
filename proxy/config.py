@@ -41,6 +41,7 @@ class Settings:
     elevenlabs_speed: float = 0.95
     elevenlabs_use_speaker_boost: bool = True
     log_level: str = "INFO"
+    log_debug_modules: str = ""
     queue_maxsize: int = 256
     audio_sample_rate: int = 16000
     audio_channels: int = 1
@@ -109,6 +110,7 @@ class Settings:
             elevenlabs_use_speaker_boost=os.getenv("PROXY_ELEVENLABS_USE_SPEAKER_BOOST", "1")
             in ("1", "true", "True"),
             log_level=os.getenv("PROXY_LOG_LEVEL", "INFO"),
+            log_debug_modules=os.getenv("PROXY_LOG_DEBUG_MODULES", ""),
             queue_maxsize=int(os.getenv("PROXY_QUEUE_MAXSIZE", "256")),
             audio_sample_rate=int(os.getenv("PROXY_AUDIO_SAMPLE_RATE", "16000")),
             audio_channels=int(os.getenv("PROXY_AUDIO_CHANNELS", "1")),

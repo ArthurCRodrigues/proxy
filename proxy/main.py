@@ -43,7 +43,7 @@ def _parse_cancel_commands(raw: str) -> tuple[str, ...]:
 
 async def _run() -> None:
     settings = Settings.from_env()
-    configure_logger(settings.log_level)
+    configure_logger(settings.log_level, settings.log_debug_modules)
     logger = get_logger("proxy.main")
     logger.info("Starting Proxy bootstrap")
 
