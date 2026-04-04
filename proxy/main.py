@@ -4,7 +4,7 @@ import argparse
 import asyncio
 import re
 
-from proxy.audio.assets import load_random_wake_audio
+from proxy.audio.assets import choose_wake_sounds_dir, load_random_wake_audio
 from proxy.audio.io import AudioIO
 from proxy.audio.playback import PlaybackEngine
 from proxy.audio.wake_vad import WakeVadEngine
@@ -93,6 +93,7 @@ async def _run() -> None:
     tts_text_buffer = ""
     tts_partial_seen_since_final = False
     cancel_commands = _parse_cancel_commands(settings.cancel_commands)
+    first_wake = True
 
     def _allow_stt_audio_forward() -> bool:
         if orchestrator is None:
@@ -229,8 +230,15 @@ async def _run() -> None:
     tts_task = asyncio.create_task(_tts_loop())
 
     async def on_wake() -> None:
+        nonlocal first_wake
         await session_pool.activate()
-        wake_audio = load_random_wake_audio(settings.wake_sounds_dir, settings.yes_asset_path)
+        wake_sounds_dir = choose_wake_sounds_dir(
+            first_wake=first_wake,
+            greetings_sounds_dir=settings.greetings_sounds_dir,
+            wake_sounds_dir=settings.wake_sounds_dir,
+        )
+        first_wake = False
+        wake_audio = load_random_wake_audio(wake_sounds_dir, settings.yes_asset_path)
         speech_gate.block()
         echo_filter.record_assistant_text("yes")
         await playback.play_pcm(wake_audio)

@@ -49,6 +49,7 @@ class Settings:
     audio_input_queue_maxsize: int = 128
     audio_input_device: str = ""
     yes_asset_path: str = "assets/yes.wav"
+    greetings_sounds_dir: str = "assets/greetings"
     wake_sounds_dir: str = "assets/wake"
     wake_phrase: str = "proxy"
     wake_aliases: str = "proxy,roxy,rocky"
@@ -118,6 +119,7 @@ class Settings:
             audio_input_queue_maxsize=int(os.getenv("PROXY_AUDIO_INPUT_QUEUE_MAXSIZE", "128")),
             audio_input_device=os.getenv("PROXY_AUDIO_INPUT_DEVICE", ""),
             yes_asset_path=os.getenv("PROXY_YES_ASSET_PATH", "assets/yes.wav"),
+            greetings_sounds_dir=os.getenv("PROXY_GREETINGS_SOUNDS_DIR", "assets/greetings"),
             wake_sounds_dir=os.getenv("PROXY_WAKE_SOUNDS_DIR", "assets/wake"),
             wake_phrase=os.getenv("PROXY_WAKE_PHRASE", "proxy"),
             wake_aliases=os.getenv("PROXY_WAKE_ALIASES", "proxy,roxy,rocky"),

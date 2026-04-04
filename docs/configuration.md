@@ -29,6 +29,7 @@ These three variables use unprefixed names because they're standard across tools
 | `PROXY_AUDIO_INPUT_QUEUE_MAXSIZE` | `128` | Max buffered audio chunks before dropping oldest |
 | `PROXY_AUDIO_INPUT_DEVICE` | (system default) | Input device index or name substring |
 | `PROXY_YES_ASSET_PATH` | `assets/yes.wav` | Fallback wake acknowledgment sound |
+| `PROXY_GREETINGS_SOUNDS_DIR` | `assets/greetings` | Directory of first-wake greeting WAV files |
 | `PROXY_WAKE_SOUNDS_DIR` | `assets/wake` | Directory of wake acknowledgment WAV files |
 
 ## Wake word & VAD

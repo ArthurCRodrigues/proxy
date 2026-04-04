@@ -43,13 +43,13 @@ Only one playback can be active at a time. Calling `play_pcm` while audio is alr
 
 ## Wake sounds (assets)
 
-Proxy plays a random acknowledgment sound when the wake word is detected. These sounds are WAV files stored in the `assets/wake/` directory (configurable via `PROXY_WAKE_SOUNDS_DIR`).
+Proxy plays a random acknowledgment sound when the wake word is detected.
 
 On each wake event:
-1. `list_wake_wavs` recursively scans the directory for `.wav` files.
-2. `choose_wake_sound` picks one at random.
-3. If no WAV files are found, it falls back to `PROXY_YES_ASSET_PATH` (default `assets/yes.wav`).
-4. The WAV is loaded as `PcmAudio` (must be PCM16 format).
+1. On the first wake of the process, Proxy loads from `PROXY_GREETINGS_SOUNDS_DIR` (default `assets/greetings`).
+2. On all subsequent wakes, Proxy loads from `PROXY_WAKE_SOUNDS_DIR` (default `assets/wake`).
+3. In either case, if no WAV files are found, it falls back to `PROXY_YES_ASSET_PATH` (default `assets/yes.wav`).
+4. The selected WAV is loaded as `PcmAudio` (must be PCM16 format).
 
 All asset paths are resolved relative to the project root. Absolute paths are used as-is.
 
@@ -62,5 +62,6 @@ All asset paths are resolved relative to the project root. Absolute paths are us
 | `PROXY_AUDIO_CHUNK_MS` | `20` | Capture chunk duration in milliseconds |
 | `PROXY_AUDIO_INPUT_QUEUE_MAXSIZE` | `128` | Max buffered chunks before dropping |
 | `PROXY_AUDIO_INPUT_DEVICE` | (default device) | Input device index or name |
+| `PROXY_GREETINGS_SOUNDS_DIR` | `assets/greetings` | Directory of first-wake greeting WAVs |
 | `PROXY_WAKE_SOUNDS_DIR` | `assets/wake` | Directory of wake acknowledgment WAVs |
 | `PROXY_YES_ASSET_PATH` | `assets/yes.wav` | Fallback wake sound |

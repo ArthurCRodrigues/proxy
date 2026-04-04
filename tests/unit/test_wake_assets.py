@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import wave
 
-from proxy.audio.assets import choose_wake_sound, list_wake_wavs
+from proxy.audio.assets import choose_wake_sound, choose_wake_sounds_dir, list_wake_wavs
 
 
 def _write_wav(path: Path) -> None:
@@ -38,3 +38,22 @@ def test_choose_wake_sound_from_candidates(tmp_path: Path) -> None:
 
     picked = choose_wake_sound(str(sounds_dir), str(fallback))
     assert picked in {a, b}
+
+
+def test_choose_wake_sounds_dir() -> None:
+    assert (
+        choose_wake_sounds_dir(
+            first_wake=True,
+            greetings_sounds_dir="assets/greetings",
+            wake_sounds_dir="assets/wake",
+        )
+        == "assets/greetings"
+    )
+    assert (
+        choose_wake_sounds_dir(
+            first_wake=False,
+            greetings_sounds_dir="assets/greetings",
+            wake_sounds_dir="assets/wake",
+        )
+        == "assets/wake"
+    )

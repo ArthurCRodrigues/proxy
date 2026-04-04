@@ -61,5 +61,11 @@ def choose_wake_sound(wake_sounds_dir: str, fallback_asset_path: str) -> Path:
     return resolve_asset_path(fallback_asset_path)
 
 
+def choose_wake_sounds_dir(
+    *, first_wake: bool, greetings_sounds_dir: str, wake_sounds_dir: str
+) -> str:
+    return greetings_sounds_dir if first_wake else wake_sounds_dir
+
+
 def load_random_wake_audio(wake_sounds_dir: str, fallback_asset_path: str) -> PcmAudio:
     return load_wav_pcm(choose_wake_sound(wake_sounds_dir, fallback_asset_path))
