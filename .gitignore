@@ -11,3 +11,4 @@ build/
 .eggs/
 *.egg
 .venv/
+.idea/

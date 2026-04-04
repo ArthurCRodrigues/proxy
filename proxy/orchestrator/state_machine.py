@@ -39,7 +39,7 @@ def apply_event(ctx: OrchestratorContext, event: Event) -> OrchestratorContext:
         if event.type == EventType.WAKE:
             return OrchestratorContext(
                 state=AssistantState.WAKE_DETECTED,
-                session_id=ctx.session_id,
+                session_id=_new_id(),
                 turn_id=None,
             )
         raise InvalidTransitionError(f"{state} cannot handle {event.type}")
@@ -69,6 +69,12 @@ def apply_event(ctx: OrchestratorContext, event: Event) -> OrchestratorContext:
         raise InvalidTransitionError(f"{state} cannot handle {event.type}")
 
     if state == AssistantState.THINKING:
+        if event.type == EventType.CANCEL:
+            return OrchestratorContext(
+                state=AssistantState.IDLE,
+                session_id=None,
+                turn_id=None,
+            )
         if event.type == EventType.ASSISTANT_FINAL:
             return OrchestratorContext(
                 state=AssistantState.IDLE,
@@ -84,6 +90,12 @@ def apply_event(ctx: OrchestratorContext, event: Event) -> OrchestratorContext:
         raise InvalidTransitionError(f"{state} cannot handle {event.type}")
 
     if state == AssistantState.SPEAKING:
+        if event.type == EventType.CANCEL:
+            return OrchestratorContext(
+                state=AssistantState.IDLE,
+                session_id=None,
+                turn_id=None,
+            )
         if event.type == EventType.ASSISTANT_PARTIAL:
             return ctx
         if event.type == EventType.ASSISTANT_FINAL:

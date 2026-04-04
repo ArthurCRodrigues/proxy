@@ -57,10 +57,12 @@ IDLE ──WAKE──► WAKE_DETECTED ──READY──► LISTENING ──USER
 **THINKING:**
 - `ASSISTANT_PARTIAL` → `SPEAKING`. Context is preserved.
 - `ASSISTANT_FINAL` → `IDLE`. Context is cleared. This happens when Copilot returns a short response with no streaming partials.
+- `CANCEL` → `IDLE`. Context is cleared.
 
 **SPEAKING:**
 - `ASSISTANT_PARTIAL` → `SPEAKING` (no-op). Context is preserved.
 - `ASSISTANT_FINAL` → `IDLE`. Context is cleared.
+- `CANCEL` → `IDLE`. Context is cleared.
 
 **STOPPED:**
 - All events raise `InvalidTransitionError`. This is a terminal state.

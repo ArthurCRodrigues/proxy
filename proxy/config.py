@@ -34,9 +34,10 @@ class Settings:
     elevenlabs_voice_id: str
     elevenlabs_model_id: str = "eleven_multilingual_v2"
     elevenlabs_output_format: str = "pcm_22050"
+    elevenlabs_latency_mode: str = "optimistic"
     elevenlabs_stability: float = 0.45
     elevenlabs_similarity_boost: float = 0.85
-    elevenlabs_style: float = 0.25
+    elevenlabs_style: float = 0.65
     elevenlabs_speed: float = 0.95
     elevenlabs_use_speaker_boost: bool = True
     log_level: str = "INFO"
@@ -77,6 +78,8 @@ class Settings:
     copilot_model: str = ""
     copilot_allow_all: bool = True
     copilot_instructions_path: str = _default_copilot_instructions_path()
+    tts_text_queue_maxsize: int = 128
+    tts_audio_queue_maxsize: int = 256
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -94,11 +97,12 @@ class Settings:
             elevenlabs_voice_id=os.getenv("ELEVENLABS_VOICE_ID", ""),
             elevenlabs_model_id=os.getenv("PROXY_ELEVENLABS_MODEL_ID", "eleven_multilingual_v2"),
             elevenlabs_output_format=os.getenv("PROXY_ELEVENLABS_OUTPUT_FORMAT", "pcm_22050"),
+            elevenlabs_latency_mode=os.getenv("PROXY_ELEVENLABS_LATENCY_MODE", "optimistic"),
             elevenlabs_stability=float(os.getenv("PROXY_ELEVENLABS_STABILITY", "0.45")),
             elevenlabs_similarity_boost=float(
                 os.getenv("PROXY_ELEVENLABS_SIMILARITY_BOOST", "0.85")
             ),
-            elevenlabs_style=float(os.getenv("PROXY_ELEVENLABS_STYLE", "0.25")),
+            elevenlabs_style=float(os.getenv("PROXY_ELEVENLABS_STYLE", "0.65")),
             elevenlabs_speed=float(os.getenv("PROXY_ELEVENLABS_SPEED", "0.95")),
             elevenlabs_use_speaker_boost=os.getenv("PROXY_ELEVENLABS_USE_SPEAKER_BOOST", "1")
             in ("1", "true", "True"),
@@ -155,4 +159,12 @@ class Settings:
             copilot_allow_all=os.getenv("PROXY_COPILOT_ALLOW_ALL", "1")
             in ("1", "true", "True"),
             copilot_instructions_path=copilot_instructions_path,
+            tts_text_queue_maxsize=max(
+                1,
+                int(os.getenv("PROXY_TTS_TEXT_QUEUE_MAXSIZE", "128")),
+            ),
+            tts_audio_queue_maxsize=max(
+                1,
+                int(os.getenv("PROXY_TTS_AUDIO_QUEUE_MAXSIZE", "256")),
+            ),
         )

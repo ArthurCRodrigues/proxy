@@ -89,10 +89,10 @@ These three variables use unprefixed names because they're standard across tools
 |---|---|---|
 | `PROXY_ELEVENLABS_MODEL_ID` | `eleven_multilingual_v2` | ElevenLabs model |
 | `PROXY_ELEVENLABS_OUTPUT_FORMAT` | `pcm_22050` | Primary output format |
-| `PROXY_ELEVENLABS_FALLBACK_OUTPUT_FORMATS` | `wav_22050` | Comma-separated fallback formats (tried on 403) |
+| `PROXY_ELEVENLABS_LATENCY_MODE` | `optimistic` | ElevenLabs WebSocket latency mode |
 | `PROXY_ELEVENLABS_STABILITY` | `0.45` | Voice stability (0.0–1.0) |
 | `PROXY_ELEVENLABS_SIMILARITY_BOOST` | `0.85` | Voice similarity boost (0.0–1.0) |
-| `PROXY_ELEVENLABS_STYLE` | `0.25` | Style exaggeration (0.0–1.0) |
+| `PROXY_ELEVENLABS_STYLE` | `0.65` | Style exaggeration (0.0–1.0) |
 | `PROXY_ELEVENLABS_SPEED` | `0.95` | Speech speed multiplier |
 | `PROXY_ELEVENLABS_USE_SPEAKER_BOOST` | `1` | Enable speaker boost |
 
@@ -100,6 +100,5 @@ These three variables use unprefixed names because they're standard across tools
 
 | Variable | Default | Description |
 |---|---|---|
-| `PROXY_TTS_SPEAK_PARTIALS` | `1` | Speak Copilot partial responses as they stream in |
-| `PROXY_TTS_PARTIAL_MIN_CHARS` | `12` | Minimum characters before emitting a speakable chunk |
-| `PROXY_TTS_PARTIAL_FORCE_FLUSH_CHARS` | `72` | Force-emit a chunk after this many chars without a sentence boundary. `0` disables. |
+| `PROXY_TTS_TEXT_QUEUE_MAXSIZE` | `128` | Maximum buffered outbound text updates before backpressure handling |
+| `PROXY_TTS_AUDIO_QUEUE_MAXSIZE` | `256` | Maximum buffered inbound audio chunks for playback |

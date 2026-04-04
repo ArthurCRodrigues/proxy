@@ -27,6 +27,8 @@ class PlaybackEngine:
         self._play_task: asyncio.Task[None] | None = None
         self._stream_task: asyncio.Task[None] | None = None
         self._audio_queue: asyncio.Queue[bytes | None] | None = None
+        self._stream_lock = asyncio.Lock()
+        self._stream_channels = 1
 
     async def play_pcm(self, audio: PcmAudio) -> None:
         await self.cancel()
@@ -54,26 +56,45 @@ class PlaybackEngine:
             stream.stop()
             stream.close()
 
-    def start_stream(self, sample_rate: int = 22050, channels: int = 1) -> None:
-        self._audio_queue = asyncio.Queue(maxsize=256)
-        self._stream_task = asyncio.create_task(
-            self._stream_worker(sample_rate, channels)
-        )
+    async def start_stream(
+        self,
+        sample_rate: int = 22050,
+        channels: int = 1,
+        queue_maxsize: int = 256,
+    ) -> None:
+        async with self._stream_lock:
+            await self._cancel_stream_locked()
+            self._stream_channels = channels
+            self._audio_queue = asyncio.Queue(maxsize=max(1, queue_maxsize))
+            self._stream_task = asyncio.create_task(
+                self._stream_worker(sample_rate, channels)
+            )
 
-    def push_audio(self, data: bytes) -> None:
-        if self._audio_queue is not None and data:
-            try:
-                self._audio_queue.put_nowait(data)
-            except asyncio.QueueFull:
-                pass
+    async def push_audio(self, data: bytes) -> None:
+        if not data:
+            return
+        queue = self._audio_queue
+        if queue is None:
+            return
+        if len(data) % (self._stream_channels * 2) != 0:
+            data = self._trim_to_frame_boundary(data, self._stream_channels)
+        if not data:
+            return
+        try:
+            queue.put_nowait(data)
+        except asyncio.QueueFull as exc:
+            raise RuntimeError("Playback stream queue is full") from exc
 
     async def end_stream(self) -> None:
-        if self._audio_queue is not None:
-            await self._audio_queue.put(None)
-        if self._stream_task is not None and not self._stream_task.done():
-            await self._stream_task
-        self._stream_task = None
-        self._audio_queue = None
+        async with self._stream_lock:
+            queue = self._audio_queue
+            stream_task = self._stream_task
+            if queue is not None:
+                await queue.put(None)
+            if stream_task is not None and not stream_task.done():
+                await stream_task
+            self._stream_task = None
+            self._audio_queue = None
 
     async def _stream_worker(self, sample_rate: int, channels: int) -> None:
         sd = _import_sounddevice()
@@ -104,6 +125,10 @@ class PlaybackEngine:
                 except asyncio.CancelledError:
                     pass
             self._play_task = None
+        async with self._stream_lock:
+            await self._cancel_stream_locked()
+
+    async def _cancel_stream_locked(self) -> None:
         if self._stream_task is not None:
             if not self._stream_task.done():
                 self._stream_task.cancel()
@@ -113,3 +138,11 @@ class PlaybackEngine:
                     pass
             self._stream_task = None
         self._audio_queue = None
+
+    @staticmethod
+    def _trim_to_frame_boundary(data: bytes, channels: int) -> bytes:
+        bytes_per_frame = channels * 2
+        if bytes_per_frame <= 0:
+            return b""
+        usable_len = len(data) - (len(data) % bytes_per_frame)
+        return data[:usable_len]

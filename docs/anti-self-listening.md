@@ -16,7 +16,7 @@ The hold window is intentionally longer than the typical TTS chunk duration to a
 ### When the gate is activated
 
 - Before playing the wake acknowledgment sound.
-- Before playing each TTS audio chunk (in `_tts_loop`).
+- As each realtime TTS audio chunk arrives before enqueueing to playback.
 
 ## Echo filter
 
@@ -33,7 +33,6 @@ If either check passes, the transcript is classified as an echo and rejected.
 
 Every piece of text that Proxy speaks is recorded in the echo filter:
 - The word "yes" (recorded when the wake sound plays, since the wake sound is an acknowledgment).
-- Each TTS chunk before it's synthesized.
 - Each assistant partial and final text as it arrives from Copilot.
 
 This redundancy ensures the filter has coverage even if text is chunked differently between the Copilot response and the TTS output.
