@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 from collections.abc import Callable
 from urllib.parse import urlencode
 
@@ -65,8 +64,7 @@ class DeepgramSTTAdapter:
         self._on_final: Callable[[str], None] | None = None
         self._lock = asyncio.Lock()
         self._stopped = False
-        self._last_partial_text = ""
-        self._assembled_partial_text = ""
+        self._finalized_segments: list[str] = []
 
     def _url(self) -> str:
         params: list[tuple[str, str]] = [
@@ -97,8 +95,7 @@ class DeepgramSTTAdapter:
             if sample_rate is not None:
                 self._sample_rate = sample_rate
             self._stopped = False
-            self._last_partial_text = ""
-            self._assembled_partial_text = ""
+            self._finalized_segments = []
 
             import websockets
 
@@ -138,10 +135,9 @@ class DeepgramSTTAdapter:
         msg_type = payload.get("type", "")
 
         if msg_type == "UtteranceEnd":
-            final_text = (self._assembled_partial_text or self._last_partial_text).strip()
-            if final_text:
-                self._last_partial_text = ""
-                self._assembled_partial_text = ""
+            if self._finalized_segments:
+                final_text = " ".join(self._finalized_segments)
+                self._finalized_segments = []
                 if self._on_final is not None:
                     self._on_final(final_text)
             return
@@ -154,30 +150,20 @@ class DeepgramSTTAdapter:
             return
 
         transcript, is_final, speech_final = parsed
+
         if speech_final:
-            final_text = self._assemble_final_text(transcript)
-            if not final_text:
-                return
-            self._last_partial_text = ""
-            self._assembled_partial_text = ""
-            if self._on_final is not None:
-                self._on_final(final_text)
+            if transcript:
+                self._finalized_segments.append(transcript)
+            final_text = " ".join(self._finalized_segments) if self._finalized_segments else transcript
+            if final_text:
+                self._finalized_segments = []
+                if self._on_final is not None:
+                    self._on_final(final_text)
         elif is_final:
             if transcript:
-                self._last_partial_text = transcript
-                self._assembled_partial_text = _merge_partial_utterance(
-                    self._assembled_partial_text,
-                    transcript,
-                )
-                if self._on_partial is not None:
-                    self._on_partial(transcript)
+                self._finalized_segments.append(transcript)
         else:
-            self._last_partial_text = transcript
-            self._assembled_partial_text = _merge_partial_utterance(
-                self._assembled_partial_text,
-                transcript,
-            )
-            if self._on_partial is not None:
+            if transcript and self._on_partial is not None:
                 self._on_partial(transcript)
 
     async def push_audio(self, data: bytes) -> None:
@@ -238,37 +224,7 @@ class DeepgramSTTAdapter:
             except Exception:
                 pass
         self._ws = None
-        self._last_partial_text = ""
-        self._assembled_partial_text = ""
-
-    def _assemble_final_text(self, final_text: str) -> str:
-        candidate = final_text.strip() or self._last_partial_text.strip() or self._assembled_partial_text.strip()
-        if not candidate:
-            return ""
-
-        assembled = self._assembled_partial_text.strip()
-        if not assembled:
-            return candidate
-
-        merged = _merge_partial_utterance(assembled, candidate)
-        norm_candidate = _normalize_for_compare(candidate)
-        norm_merged = _normalize_for_compare(merged)
-        if not norm_candidate or not norm_merged:
-            return candidate
-
-        extra_words = _word_count(merged) - _word_count(candidate)
-        if extra_words >= 2 and (
-            norm_merged.endswith(norm_candidate)
-            or (norm_candidate in norm_merged and len(norm_merged) >= int(len(norm_candidate) * 1.5))
-        ):
-            self._logger.debug(
-                "Using assembled final from partial history (candidate=%r assembled=%r)",
-                candidate,
-                merged,
-            )
-            return merged
-
-        return candidate
+        self._finalized_segments = []
 
 
 def _is_ws_open(ws: object) -> bool:
@@ -283,53 +239,3 @@ def _is_ws_open(ws: object) -> bool:
         return False
 
     return True
-
-
-def _normalize_for_compare(text: str) -> str:
-    return re.sub(r"[^a-z0-9\s]+", "", text.lower()).strip()
-
-
-def _word_count(text: str) -> int:
-    return len([token for token in text.split() if token])
-
-
-def _merge_partial_utterance(assembled: str, partial: str) -> str:
-    left = assembled.strip()
-    right = partial.strip()
-    if not right:
-        return left
-    if not left:
-        return right
-
-    norm_left = _normalize_for_compare(left)
-    norm_right = _normalize_for_compare(right)
-    if not norm_left:
-        return right
-    if not norm_right:
-        return left
-    if norm_right in norm_left:
-        return left
-    if norm_left in norm_right and _word_count(right) >= _word_count(left) - 2:
-        return right
-
-    overlap = _token_overlap_count(left, right)
-    if overlap > 0:
-        left_tokens = left.split()
-        right_tokens = right.split()
-        return " ".join(left_tokens + right_tokens[overlap:])
-
-    return f"{left} {right}"
-
-
-def _token_overlap_count(left: str, right: str, max_window: int = 16) -> int:
-    left_tokens = left.split()
-    right_tokens = right.split()
-    max_k = min(len(left_tokens), len(right_tokens), max_window)
-    for k in range(max_k, 1, -1):
-        l_slice = left_tokens[-k:]
-        r_slice = right_tokens[:k]
-        l_norm = " ".join(_normalize_for_compare(token) for token in l_slice).strip()
-        r_norm = " ".join(_normalize_for_compare(token) for token in r_slice).strip()
-        if l_norm and l_norm == r_norm:
-            return k
-    return 0

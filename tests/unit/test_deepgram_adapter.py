@@ -3,10 +3,6 @@ from __future__ import annotations
 from proxy.stt.deepgram_adapter import (
     DeepgramSTTAdapter,
     _is_ws_open,
-    _merge_partial_utterance,
-    _normalize_for_compare,
-    _token_overlap_count,
-    _word_count,
     extract_transcript,
 )
 
@@ -61,94 +57,64 @@ def test_url_supports_keyterms_and_disable_endpointing() -> None:
     assert "keyterm=GitHub+issue" in url
 
 
-def test_is_final_without_speech_final_treated_as_partial() -> None:
+def test_is_final_accumulates_segments() -> None:
     adapter = DeepgramSTTAdapter(api_key="k", sample_rate=16000)
     partials: list[str] = []
     finals: list[str] = []
     adapter.on_partial(partials.append)
     adapter.on_final(finals.append)
+
+    # Interim partial — forwarded as partial only
     adapter._handle_message(
-        '{"type":"Results","is_final":true,"channel":{"alternatives":[{"transcript":"hello"}]}}'
+        '{"type":"Results","is_final":false,"speech_final":false,"channel":{"alternatives":[{"transcript":"hello world"}]}}'
     )
-    assert partials == ["hello"]
+    assert partials == ["hello world"]
     assert finals == []
 
+    # is_final segment — accumulated, not emitted
+    adapter._handle_message(
+        '{"type":"Results","is_final":true,"speech_final":false,"channel":{"alternatives":[{"transcript":"hello world"}]}}'
+    )
+    assert finals == []
 
-def test_speech_final_emitted_directly() -> None:
+    # Second is_final segment
+    adapter._handle_message(
+        '{"type":"Results","is_final":true,"speech_final":false,"channel":{"alternatives":[{"transcript":"how are you"}]}}'
+    )
+    assert finals == []
+
+    # UtteranceEnd — joins and emits
+    adapter._handle_message('{"type":"UtteranceEnd","channel":[0,1],"last_word_end":2.0}')
+    assert finals == ["hello world how are you"]
+    assert adapter._finalized_segments == []
+
+
+def test_speech_final_emits_immediately() -> None:
     adapter = DeepgramSTTAdapter(api_key="k", sample_rate=16000)
     finals: list[str] = []
     adapter.on_final(finals.append)
-    adapter._handle_message(
-        '{"type":"Results","is_final":false,"speech_final":true,"channel":{"alternatives":[{"transcript":"complete"}]}}'
-    )
-    assert finals == ["complete"]
 
-
-def test_empty_speech_final_uses_last_partial_text() -> None:
-    adapter = DeepgramSTTAdapter(api_key="k", sample_rate=16000)
-    finals: list[str] = []
-    adapter.on_final(finals.append)
     adapter._handle_message(
-        '{"type":"Results","is_final":false,"channel":{"alternatives":[{"transcript":"working text"}]}}'
+        '{"type":"Results","is_final":true,"speech_final":false,"channel":{"alternatives":[{"transcript":"first segment"}]}}'
     )
     adapter._handle_message(
-        '{"type":"Results","is_final":false,"speech_final":true,"channel":{"alternatives":[{"transcript":""}]}}'
+        '{"type":"Results","is_final":false,"speech_final":true,"channel":{"alternatives":[{"transcript":"second segment"}]}}'
     )
-    assert finals == ["working text"]
+    assert finals == ["first segment second segment"]
 
 
-def test_truncated_final_prefers_best_partial_text() -> None:
-    adapter = DeepgramSTTAdapter(api_key="k", sample_rate=16000)
-    finals: list[str] = []
-    adapter.on_final(finals.append)
-    adapter._handle_message(
-        '{"type":"Results","is_final":false,"channel":{"alternatives":[{"transcript":"lets work on prisma infrastructure issue one two three"}]}}'
-    )
-    adapter._handle_message(
-        '{"type":"Results","is_final":true,"speech_final":true,"channel":{"alternatives":[{"transcript":"issue one two three"}]}}'
-    )
-    assert finals == ["lets work on prisma infrastructure issue one two three"]
-
-
-def test_normalize_and_word_count_helpers() -> None:
-    assert _normalize_for_compare("Hello, World!") == "hello world"
-    assert _word_count("a  b   c") == 3
-
-
-def test_merge_partial_utterance_with_overlap() -> None:
-    merged = _merge_partial_utterance(
-        "I need you to answer me through the eleven labs mcp",
-        "through the eleven labs mcp and just answer me through audio",
-    )
-    assert merged == "I need you to answer me through the eleven labs mcp and just answer me through audio"
-
-
-def test_merge_partial_utterance_without_overlap_appends() -> None:
-    merged = _merge_partial_utterance("first part", "second part")
-    assert merged == "first part second part"
-
-
-def test_token_overlap_count_detects_suffix_prefix_overlap() -> None:
-    overlap = _token_overlap_count("alpha beta gamma delta", "gamma delta epsilon zeta")
-    assert overlap == 2
-
-
-def test_utterance_end_flushes_assembled_as_final() -> None:
-    adapter = DeepgramSTTAdapter(api_key="k", sample_rate=16000)
-    finals: list[str] = []
-    adapter.on_final(finals.append)
-    adapter._handle_message(
-        '{"type":"Results","is_final":false,"channel":{"alternatives":[{"transcript":"hello world"}]}}'
-    )
-    adapter._handle_message('{"type":"UtteranceEnd","channel":[0,1],"last_word_end":1.5}')
-    assert finals == ["hello world"]
-    assert adapter._last_partial_text == ""
-    assert adapter._assembled_partial_text == ""
-
-
-def test_utterance_end_ignored_when_no_text() -> None:
+def test_utterance_end_ignored_when_no_segments() -> None:
     adapter = DeepgramSTTAdapter(api_key="k", sample_rate=16000)
     finals: list[str] = []
     adapter.on_final(finals.append)
     adapter._handle_message('{"type":"UtteranceEnd","channel":[0,1],"last_word_end":1.0}')
     assert finals == []
+
+
+def test_interim_partials_not_accumulated() -> None:
+    adapter = DeepgramSTTAdapter(api_key="k", sample_rate=16000)
+    # Send only interim partials, no is_final
+    adapter._handle_message(
+        '{"type":"Results","is_final":false,"speech_final":false,"channel":{"alternatives":[{"transcript":"testing"}]}}'
+    )
+    assert adapter._finalized_segments == []
