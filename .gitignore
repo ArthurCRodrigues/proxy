@@ -1,7 +1,7 @@
 .env
 assets/wake
 assets/models
-
+assets/greetings
 __pycache__/
 *.pyc
 *.pyo

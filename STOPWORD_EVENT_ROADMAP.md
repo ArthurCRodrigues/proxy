@@ -3,12 +3,12 @@
 ## Problem Statement
 Current interaction has two major issues:
 1. Copilot internals are opaque unless reading raw JSON, which makes TARS feel like a black box.
-2. The prior `working/handoff` JSON contract is inconsistent and unsafe for TTS (JSON being spoken aloud).
+2. Legacy handoff behavior is inconsistent and unsafe for TTS (JSON being spoken aloud).
 
 You want a new interaction model where:
 - TARS can narrate what Copilot is doing in real time.
 - Terminal output is human-readable (not raw JSON spam).
-- Handoff is controlled by a voice **stopword**, not final-message JSON protocol.
+- Handoff is controlled by a voice **stopword**, not final-message JSON.
 - There is no `SPEAKING` state gate; speech can happen whenever relevant Copilot events arrive.
 - TARS must not transcribe/satisfy its own TTS as user input.
 
@@ -25,8 +25,8 @@ You want a new interaction model where:
 
 ## Architecture Changes (High-Level)
 
-### A) Replace protocol-based handoff with stopword-based control
-- Remove mandatory `working/handoff` contract dependency from bootstrap behavior.
+### A) Stopword-based handoff control
+- Use stopword interruption as the primary handoff control path.
 - Keep normal assistant final text as plain language output.
 - Add stopword detection path that can interrupt current copilot turn and force transition to `LISTENING`.
 
@@ -139,7 +139,6 @@ For diagnostics/telemetry only:
 2. **Phase 2: Stopword control path**
    - Add stopword config + detection pipeline.
    - Wire interrupt transition to `LISTENING`.
-   - Remove protocol-dependent handoff branching.
 
 3. **Phase 3: Speech arbitration rewrite**
    - Introduce event-to-speech planner.
@@ -181,7 +180,7 @@ For diagnostics/telemetry only:
 
 ## Success Criteria
 - User can always understand what TARS is doing from readable terminal logs + short spoken progress.
-- No raw protocol JSON is spoken.
+- No raw internal JSON is spoken.
 - Stopword reliably returns control to listening mode.
 - No recurring self-listening loop when TARS speaks while active.
 - First spoken feedback occurs quickly and consistently while work is in progress.
