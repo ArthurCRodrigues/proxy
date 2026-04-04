@@ -185,6 +185,7 @@ async def _run() -> None:
         except Exception as exc:
             logger.error("TTS flush error: %s", exc)
         await playback.end_stream()
+        await tts.cancel()
 
     stt.on_partial(_on_partial)
     stt.on_final(_on_final)

@@ -53,7 +53,7 @@ class ElevenLabsTTSAdapter:
 
         import websockets
 
-        self._ws = await websockets.connect(self._url(), ping_interval=10, ping_timeout=20)
+        self._ws = await websockets.connect(self._url(), ping_interval=10, ping_timeout=20, max_size=10 * 1024 * 1024)
         await self._ws.send(json.dumps({
             "text": " ",
             "voice_settings": {
