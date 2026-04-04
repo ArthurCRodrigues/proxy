@@ -37,6 +37,7 @@ class ElevenLabsTTSAdapter:
         self._on_audio_chunk = on_audio_chunk
         self._ws = None
         self._listener_task: asyncio.Task[None] | None = None
+        self._keepalive_task: asyncio.Task[None] | None = None
         self._stream_lock = asyncio.Lock()
         self._logger = get_logger("proxy.tts.elevenlabs")
 
@@ -76,7 +77,16 @@ class ElevenLabsTTSAdapter:
                 )
             )
             self._listener_task = asyncio.create_task(self._listen(ws))
+            self._keepalive_task = asyncio.create_task(self._keepalive(ws))
             self._logger.info("ElevenLabs WebSocket connected")
+
+    async def _keepalive(self, ws) -> None:
+        try:
+            while True:
+                await asyncio.sleep(15)
+                await ws.send(json.dumps({"text": " "}))
+        except (asyncio.CancelledError, Exception):
+            pass
 
     async def _listen(self, ws) -> None:
         try:
@@ -145,6 +155,9 @@ class ElevenLabsTTSAdapter:
         await self.cancel_stream()
 
     async def _close_stream_locked(self) -> None:
+        if self._keepalive_task is not None and not self._keepalive_task.done():
+            self._keepalive_task.cancel()
+        self._keepalive_task = None
         listener_task = self._listener_task
         current_task = asyncio.current_task()
         if listener_task is not None and listener_task is not current_task and not listener_task.done():
