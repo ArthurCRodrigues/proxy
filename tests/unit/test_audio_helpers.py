@@ -7,7 +7,7 @@ import pytest
 
 from proxy.audio.assets import load_wav_pcm
 from proxy.audio.io import frames_per_chunk, normalize_input_device, resolve_input_device
-from proxy.audio.playback import split_pcm_chunks
+from proxy.audio.playback import PlaybackEngine, split_pcm_chunks
 
 
 def test_frames_per_chunk() -> None:
@@ -53,6 +53,11 @@ def test_split_pcm_chunks() -> None:
     assert chunks == [b"abcd", b"efgh", b"ij"]
     with pytest.raises(ValueError):
         split_pcm_chunks(data, 0)
+
+
+def test_trim_to_frame_boundary() -> None:
+    trimmed = PlaybackEngine._trim_to_frame_boundary(b"abcde", channels=1)
+    assert trimmed == b"abcd"
 
 
 def test_load_wav_pcm(tmp_path: Path) -> None:

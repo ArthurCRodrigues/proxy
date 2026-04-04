@@ -17,7 +17,7 @@ Mic ─► AudioIO ─► WakeVadEngine (Vosk wake word + RMS VAD)
                                                               │
                                                      ASSISTANT_PARTIAL / FINAL
                                                               │
-                                                    TTS chunking ─► ElevenLabs
+                                              Realtime TTS text queue ─► ElevenLabs WS
                                                                         │
                                                                    PlaybackEngine ─► Speaker
 ```
@@ -34,9 +34,9 @@ Mic ─► AudioIO ─► WakeVadEngine (Vosk wake word + RMS VAD)
 
 5. On a finalized transcript (`USER_FINAL`), the state moves to `THINKING` and the text is sent to the active Copilot session. No new session is created — the existing one preserves full conversational context.
 
-6. As Copilot streams back partial responses, they are buffered and split into speakable chunks at natural sentence boundaries. Each chunk is sent to ElevenLabs for synthesis and played back sequentially, so the user hears speech while Copilot is still generating. The state is `SPEAKING` during this phase.
+6. As Copilot streams back partial responses, they are pushed in-order to a single ElevenLabs WebSocket stream. Audio chunks are played as they arrive, so the user hears speech while Copilot is still generating. The state is `SPEAKING` during this phase.
 
-7. When Copilot emits its final response, the state returns to `IDLE` and Proxy is ready for the next wake word. The same Copilot session remains active for conversational continuity unless the user explicitly says "start new session."
+7. When Copilot emits its final response, Proxy finalizes the active TTS stream and the state returns to `IDLE`. The same Copilot session remains active for conversational continuity unless the user explicitly says "start new session."
 
 ## State machine
 
@@ -89,12 +89,11 @@ STT forwarding is also gated by orchestrator state — audio only reaches Deepgr
 
 ## TTS pipeline
 
-Copilot partial deltas are appended into a text buffer. A chunking layer splits the buffer at sentence boundaries (`.!?` or newline) once a minimum character threshold is reached, with a force-flush fallback for long boundaryless runs. Each chunk is synthesized by ElevenLabs and played sequentially. On the final response, any remaining buffer is flushed.
+Copilot partial deltas are fed into a single ordered text queue and pushed incrementally to ElevenLabs over WebSocket. The adapter receives audio chunks in realtime and streams them to playback without waiting for full-response synthesis. On cancellation, active playback and stream are interrupted immediately.
 
 Configuration:
-- `PROXY_TTS_SPEAK_PARTIALS` — enable streaming partial speech (default: on)
-- `PROXY_TTS_PARTIAL_MIN_CHARS` — minimum chars before emitting a chunk
-- `PROXY_TTS_PARTIAL_FORCE_FLUSH_CHARS` — force emit without a boundary (`0` disables)
+- `PROXY_TTS_TEXT_QUEUE_MAXSIZE` — max buffered outbound text commands
+- `PROXY_TTS_AUDIO_QUEUE_MAXSIZE` — max buffered inbound audio chunks
 
 ## Repository structure
 
@@ -115,8 +114,7 @@ proxy/
     bridge.py                # ACP JSON-RPC transport, prompt execution, bootstrap
     session_pool.py          # Standby/active session management
   tts/
-    elevenlabs_adapter.py    # ElevenLabs synthesis
-    chunking.py              # Partial/final text segmentation
+    elevenlabs_adapter.py    # ElevenLabs realtime websocket adapter
   orchestrator/
     event_bus.py             # Async queue event bus
     state_machine.py         # Deterministic state reducer
@@ -160,7 +158,7 @@ See `.env.example` for all available settings. Key groups:
 - Deepgram: model, language, endpointing, utterance end, keyterms
 - Speech turn: STT gate, echo filter, listening timeout, cancel commands
 - Copilot: command, model, bootstrap instructions path
-- TTS: partial speech controls, chunk thresholds
+- TTS: realtime stream queue sizing and voice parameters
 
 ## Testing
 

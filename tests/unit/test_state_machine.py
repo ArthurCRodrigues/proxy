@@ -89,3 +89,19 @@ def test_assistant_final_returns_to_idle() -> None:
     assert out.state == AssistantState.IDLE
     assert out.session_id is None
     assert out.turn_id is None
+
+
+def test_cancel_returns_to_idle_from_thinking() -> None:
+    ctx = OrchestratorContext(state=AssistantState.THINKING, session_id="s", turn_id="t")
+    out = apply_event(ctx, Event(type=EventType.CANCEL))
+    assert out.state == AssistantState.IDLE
+    assert out.session_id is None
+    assert out.turn_id is None
+
+
+def test_cancel_returns_to_idle_from_speaking() -> None:
+    ctx = OrchestratorContext(state=AssistantState.SPEAKING, session_id="s", turn_id="t")
+    out = apply_event(ctx, Event(type=EventType.CANCEL))
+    assert out.state == AssistantState.IDLE
+    assert out.session_id is None
+    assert out.turn_id is None

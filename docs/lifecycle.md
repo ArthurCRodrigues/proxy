@@ -12,13 +12,13 @@ This document describes how Proxy boots up, processes a complete voice interacti
 
 3. **STT** — Creates the `DeepgramSTTAdapter` and registers two callbacks: `_on_partial` and `_on_final`. These callbacks gate transcripts through the speech gate and echo filter before publishing events to the bus.
 
-4. **TTS** — Creates the `ElevenLabsTTSAdapter` and starts the `_tts_loop` as a background task. This loop consumes text segments from a queue and synthesizes/plays them.
+4. **TTS** — Creates the `ElevenLabsTTSAdapter` and starts a dedicated TTS worker task. This worker consumes ordered text commands, manages the realtime stream lifecycle, and coordinates playback.
 
-5. **Copilot** — Creates the `CopilotBridge` with assistant partial/final callbacks that feed the TTS chunking pipeline. Creates a `SessionPool` wrapping the bridge.
+5. **Copilot** — Creates the `CopilotBridge` with assistant partial/final callbacks that feed the realtime TTS command queue. Creates a `SessionPool` wrapping the bridge.
 
 6. **Orchestrator** — Creates the `Orchestrator` with the event bus, a wake callback, and the copilot bridge. Sets the listening timeout. Starts `orchestrator.run()` as a background task.
 
-7. **Session prewarm** — `session_pool.ensure_standby()` creates the first Copilot ACP session in the background. This session is bootstrapped with system instructions so it's ready when the user speaks.
+7. **Session prewarm** — `session_pool.ensure_active()` creates the first Copilot ACP session in the background. This session is bootstrapped with system instructions so it's ready when the user speaks.
 
 8. **Wake engine** — Creates and starts the `WakeVadEngine`, which opens the microphone stream, loads the Vosk model, and begins the audio processing loop.
 
@@ -36,10 +36,8 @@ The `WakeVadEngine` processes audio chunks in a loop. The Vosk recognizer detect
 
 The orchestrator receives `WAKE`. The state machine transitions `IDLE` → `WAKE_DETECTED`. The orchestrator calls the `on_wake` callback:
 
-- `session_pool.activate_standby()` — promotes the pre-warmed standby session to active.
-- `copilot.bootstrap_active_session_background()` — starts bootstrapping the session with system instructions (if not already done).
+- `session_pool.activate()` — activates the pre-warmed session.
 - A random wake sound is loaded and played. The speech gate is blocked and "yes" is recorded in the echo filter.
-- `session_pool.rollover()` — prewarms a new standby session for the next interaction.
 
 The orchestrator then publishes a `READY` event.
 
@@ -69,13 +67,13 @@ Copilot starts generating. The ACP process sends `session/update` notifications 
 
 The first `ASSISTANT_PARTIAL` event transitions the state machine `THINKING` → `SPEAKING`.
 
-Meanwhile, the `_on_assistant_partial` callback in `main.py` feeds each chunk into the TTS chunking buffer. When enough text accumulates at a sentence boundary, a speakable segment is placed on the TTS queue. The `_tts_loop` picks it up, synthesizes it via ElevenLabs, and plays it through the speaker.
+Meanwhile, the `_on_assistant_partial` callback enqueues each partial into the TTS command queue. The TTS worker starts the ElevenLabs WebSocket stream if needed, pushes each text delta in order, and playback consumes audio chunks as they arrive.
 
 ### 7. Completion
 
 When Copilot finishes, the `session/prompt` future resolves. The bridge joins all accumulated text parts and calls `_on_assistant_final`, which publishes `ASSISTANT_FINAL`.
 
-The `_on_assistant_final` callback flushes any remaining text in the TTS buffer.
+The `_on_assistant_final` callback enqueues a stream-finalize command so the adapter flushes trailing audio before playback ends.
 
 The orchestrator receives `ASSISTANT_FINAL`. The state machine transitions `SPEAKING` → `IDLE`. Context is cleared.
 
@@ -93,7 +91,7 @@ The state machine is not involved — this happens at the application layer.
 
 ## Cancellation
 
-If the user says a cancel phrase (e.g. "never mind", "quit") while in `LISTENING`, the `_on_final` callback publishes a `CANCEL` event instead of `USER_FINAL`. The state machine transitions `LISTENING` → `IDLE`.
+If the user says a cancel phrase (e.g. "never mind", "quit"), the `_on_final` callback interrupts active TTS immediately and publishes a `CANCEL` event. The state machine transitions back to `IDLE` from `LISTENING`, `THINKING`, or `SPEAKING`.
 
 ## Shutdown
 
@@ -101,8 +99,8 @@ On `KeyboardInterrupt` or other termination:
 
 1. The wake engine is stopped (cancels the audio loop, closes the microphone).
 2. The Copilot bridge is hard-stopped (cancels all tasks, terminates the ACP process).
-3. The TTS adapter is cancelled.
-4. The TTS loop task is cancelled.
+3. The TTS worker is stopped.
+4. The TTS adapter stream is cancelled.
 5. Playback is cancelled.
 6. A `STOP` event is published, transitioning the state machine to `STOPPED`.
 7. The orchestrator runner task is cancelled.
