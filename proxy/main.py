@@ -240,8 +240,36 @@ async def _run() -> None:
                     cleaned = command.text.strip()
                     if not cleaned:
                         continue
-                    await _start_tts_stream()
-                    await tts.push_text(cleaned)
+                    # Drain any additional queued text commands into a single batch
+                    parts = [cleaned]
+                    while not tts_command_queue.empty():
+                        try:
+                            next_cmd = tts_command_queue.get_nowait()
+                        except asyncio.QueueEmpty:
+                            break
+                        if next_cmd.kind == "text":
+                            t = next_cmd.text.strip()
+                            if t:
+                                parts.append(t)
+                            tts_command_queue.task_done()
+                        else:
+                            # Put non-text command back by processing it next iteration
+                            await _start_tts_stream()
+                            await tts.push_text("".join(parts))
+                            parts = []
+                            # Re-handle the non-text command
+                            if next_cmd.kind == "finalize":
+                                await _finalize_tts_stream()
+                            elif next_cmd.kind == "cancel":
+                                await _cancel_tts_stream()
+                            elif next_cmd.kind == "stop":
+                                tts_command_queue.task_done()
+                                return
+                            tts_command_queue.task_done()
+                            break
+                    if parts:
+                        await _start_tts_stream()
+                        await tts.push_text("".join(parts))
             except Exception as exc:
                 logger.error("TTS command '%s' failed: %s", command.kind, exc)
                 await _cancel_tts_stream()
