@@ -34,7 +34,6 @@ class Settings:
     elevenlabs_voice_id: str
     elevenlabs_model_id: str = "eleven_multilingual_v2"
     elevenlabs_output_format: str = "pcm_22050"
-    elevenlabs_fallback_output_formats: tuple[str, ...] = ("wav_22050",)
     elevenlabs_stability: float = 0.45
     elevenlabs_similarity_boost: float = 0.85
     elevenlabs_style: float = 0.25
@@ -78,9 +77,6 @@ class Settings:
     copilot_model: str = ""
     copilot_allow_all: bool = True
     copilot_instructions_path: str = _default_copilot_instructions_path()
-    tts_speak_partials: bool = True
-    tts_partial_min_chars: int = 12
-    tts_partial_force_flush_chars: int = 72
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -98,9 +94,6 @@ class Settings:
             elevenlabs_voice_id=os.getenv("ELEVENLABS_VOICE_ID", ""),
             elevenlabs_model_id=os.getenv("PROXY_ELEVENLABS_MODEL_ID", "eleven_multilingual_v2"),
             elevenlabs_output_format=os.getenv("PROXY_ELEVENLABS_OUTPUT_FORMAT", "pcm_22050"),
-            elevenlabs_fallback_output_formats=_parse_csv(
-                os.getenv("PROXY_ELEVENLABS_FALLBACK_OUTPUT_FORMATS", "wav_22050")
-            ),
             elevenlabs_stability=float(os.getenv("PROXY_ELEVENLABS_STABILITY", "0.45")),
             elevenlabs_similarity_boost=float(
                 os.getenv("PROXY_ELEVENLABS_SIMILARITY_BOOST", "0.85")
@@ -162,11 +155,4 @@ class Settings:
             copilot_allow_all=os.getenv("PROXY_COPILOT_ALLOW_ALL", "1")
             in ("1", "true", "True"),
             copilot_instructions_path=copilot_instructions_path,
-            tts_speak_partials=os.getenv("PROXY_TTS_SPEAK_PARTIALS", "1")
-            in ("1", "true", "True"),
-            tts_partial_min_chars=max(1, int(os.getenv("PROXY_TTS_PARTIAL_MIN_CHARS", "12"))),
-            tts_partial_force_flush_chars=max(
-                0,
-                int(os.getenv("PROXY_TTS_PARTIAL_FORCE_FLUSH_CHARS", "72")),
-            ),
         )

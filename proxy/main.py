@@ -16,7 +16,6 @@ from proxy.orchestrator.engine import Orchestrator
 from proxy.orchestrator.event_bus import EventBus
 from proxy.stt.deepgram_adapter import DeepgramSTTAdapter
 from proxy.stt.filtering import EchoFilter, SpeechGate
-from proxy.tts.chunking import append_partial, consume_speakable_segments, merge_final, split_speakable_segments
 from proxy.tts.elevenlabs_adapter import ElevenLabsTTSAdapter
 from proxy.types import AssistantState, Event, EventType
 
@@ -72,26 +71,36 @@ async def _run() -> None:
         reconnect_max_attempts=settings.deepgram_reconnect_max_attempts,
         reconnect_base_delay_ms=settings.deepgram_reconnect_base_delay_ms,
     )
+
+    speech_gate = SpeechGate(hold_ms=settings.stt_gate_hold_ms)
+    echo_filter = EchoFilter(similarity_threshold=settings.stt_deecho_similarity_threshold)
+
+    # Parse TTS sample rate from output format (e.g. "pcm_22050" → 22050)
+    tts_sample_rate = 22050
+    if settings.elevenlabs_output_format.startswith("pcm_"):
+        try:
+            tts_sample_rate = int(settings.elevenlabs_output_format.split("_", 1)[1])
+        except ValueError:
+            pass
+
+    def _on_tts_audio_chunk(data: bytes) -> None:
+        speech_gate.block()
+        playback.push_audio(data)
+
     tts = ElevenLabsTTSAdapter(
         api_key=settings.elevenlabs_api_key,
         voice_id=settings.elevenlabs_voice_id,
         model_id=settings.elevenlabs_model_id,
         output_format=settings.elevenlabs_output_format,
-        fallback_output_formats=settings.elevenlabs_fallback_output_formats,
         stability=settings.elevenlabs_stability,
         similarity_boost=settings.elevenlabs_similarity_boost,
         style=settings.elevenlabs_style,
         speed=settings.elevenlabs_speed,
         use_speaker_boost=settings.elevenlabs_use_speaker_boost,
+        on_audio_chunk=_on_tts_audio_chunk,
     )
 
-    speech_gate = SpeechGate(hold_ms=settings.stt_gate_hold_ms)
-    echo_filter = EchoFilter(similarity_threshold=settings.stt_deecho_similarity_threshold)
     orchestrator: Orchestrator | None = None
-    tts_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=64)
-    tts_task: asyncio.Task[None] | None = None
-    tts_text_buffer = ""
-    tts_partial_seen_since_final = False
     cancel_commands = _parse_cancel_commands(settings.cancel_commands)
 
     def _allow_stt_audio_forward() -> bool:
@@ -140,70 +149,42 @@ async def _run() -> None:
             return
         asyncio.create_task(bus.publish(Event(type=EventType.USER_FINAL, payload={"text": text})))
 
+    tts_stream_active = False
+
+    async def _start_tts_stream() -> None:
+        nonlocal tts_stream_active
+        if tts_stream_active:
+            return
+        tts_stream_active = True
+        playback.start_stream(sample_rate=tts_sample_rate)
+        await tts.connect()
+
     def _on_assistant_partial(text: str) -> None:
-        nonlocal tts_text_buffer, tts_partial_seen_since_final
         if text:
             echo_filter.record_assistant_text(text)
             logger.info("COPILOT_PARTIAL: %s", text)
-            if not settings.tts_speak_partials:
-                return
-            tts_partial_seen_since_final = True
-            tts_text_buffer = append_partial(tts_text_buffer, text)
-            segments, tts_text_buffer, _consumed = consume_speakable_segments(
-                tts_text_buffer,
-                force=False,
-                min_chars=settings.tts_partial_min_chars,
-                force_flush_chars=settings.tts_partial_force_flush_chars,
-            )
-            for segment in segments:
-                try:
-                    tts_queue.put_nowait(segment)
-                except asyncio.QueueFull:
-                    logger.debug("TTS queue full; dropping partial chunk")
+            asyncio.create_task(_send_partial(text))
+
+    async def _send_partial(text: str) -> None:
+        await _start_tts_stream()
+        await tts.send_text(text)
 
     def _on_assistant_final(text: str) -> None:
-        nonlocal tts_text_buffer, tts_partial_seen_since_final
         if text:
             echo_filter.record_assistant_text(text)
             logger.info("COPILOT_FINAL: %s", text)
-            if settings.tts_speak_partials and tts_partial_seen_since_final:
-                segments, tts_text_buffer = split_speakable_segments(
-                    tts_text_buffer,
-                    force=True,
-                    force_flush_chars=settings.tts_partial_force_flush_chars,
-                )
-            else:
-                tts_text_buffer = merge_final(tts_text_buffer, text)
-                segments, tts_text_buffer = split_speakable_segments(
-                    tts_text_buffer,
-                    force=True,
-                    force_flush_chars=settings.tts_partial_force_flush_chars,
-                )
-            tts_partial_seen_since_final = False
-            for segment in segments:
-                try:
-                    tts_queue.put_nowait(segment)
-                except asyncio.QueueFull:
-                    logger.debug("TTS queue full; dropping final chunk")
+        asyncio.create_task(_finish_tts())
 
-    async def _tts_loop() -> None:
-        while True:
-            text = await tts_queue.get()
-            try:
-                cleaned = text.strip()
-                if not cleaned:
-                    continue
-                logger.info("TTS_OUTBOUND_CHUNK: %s", cleaned)
-                speech_gate.block()
-                echo_filter.record_assistant_text(cleaned)
-                try:
-                    audio = await tts.synthesize_text(cleaned)
-                    if audio.data:
-                        await playback.play_pcm(audio)
-                except Exception as exc:
-                    logger.error("TTS synthesis/playback error: %s", exc)
-            finally:
-                tts_queue.task_done()
+    async def _finish_tts() -> None:
+        nonlocal tts_stream_active
+        if not tts_stream_active:
+            return
+        tts_stream_active = False
+        try:
+            await tts.flush()
+        except Exception as exc:
+            logger.error("TTS flush error: %s", exc)
+        await playback.end_stream()
 
     stt.on_partial(_on_partial)
     stt.on_final(_on_final)
@@ -226,7 +207,6 @@ async def _run() -> None:
         on_assistant_final=_on_assistant_final,
     )
     session_pool = SessionPool(bridge=copilot)
-    tts_task = asyncio.create_task(_tts_loop())
 
     async def on_wake() -> None:
         await session_pool.activate()
@@ -264,23 +244,12 @@ async def _run() -> None:
             settings.audio_input_device or "default",
             audio_io.resolved_input_device if audio_io.resolved_input_device is not None else "default",
         )
-        logger.debug(
-            "Wake diagnostics enabled=%s retrigger_cooldown_ms=%s",
-            settings.wake_debug_transcripts,
-            settings.wake_retrigger_cooldown_ms,
-        )
         await runner
     finally:
         if "wake_vad" in locals():
             await wake_vad.stop()
         await copilot.hard_stop()
         await tts.cancel()
-        if tts_task is not None and not tts_task.done():
-            tts_task.cancel()
-            try:
-                await tts_task
-            except asyncio.CancelledError:
-                pass
         await playback.cancel()
         await bus.publish(Event(type=EventType.STOP))
         if not runner.done():
