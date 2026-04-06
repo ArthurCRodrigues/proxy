@@ -419,34 +419,29 @@ class CopilotBridge:
         if not isinstance(content, dict):
             content = {}
 
-        # Log all events in a readable way
         if session_update == "agent_message_chunk":
             text = str(content.get("text", ""))
             if text and state is not None:
                 state.text_parts.append(text)
                 if state.emit_events:
                     await self._emit_assistant_partial(session_id, state.turn_id, text)
-        elif session_update == "agent_turn_start":
-            self._logger.info("COPILOT_TURN_START session=%s", session_id)
-        elif session_update == "agent_turn_end":
-            self._logger.info("COPILOT_TURN_END session=%s", session_id)
-        elif session_update == "tool_execution_start":
-            tool_name = str(content.get("name", content.get("tool", "unknown")))
-            tool_input = content.get("input", content.get("arguments", ""))
-            summary = str(tool_input)[:120] if tool_input else ""
-            self._logger.info("COPILOT_TOOL_START tool=%s %s", tool_name, summary)
-        elif session_update == "tool_execution_complete":
-            tool_name = str(content.get("name", content.get("tool", "unknown")))
-            self._logger.info("COPILOT_TOOL_DONE tool=%s", tool_name)
-        elif session_update == "agent_plan_step":
-            step = str(content.get("description", content.get("text", "")))[:120]
-            self._logger.info("COPILOT_PLAN_STEP %s", step)
+        elif session_update == "agent_thought_chunk":
+            text = str(content.get("text", ""))
+            if text:
+                self._logger.info("COPILOT_THOUGHT: %s", text)
+        elif session_update == "tool_call":
+            title = str(update.get("title", ""))
+            status = str(update.get("status", ""))
+            self._logger.info("COPILOT_TOOL_CALL: %s [%s]", title, status)
+        elif session_update == "tool_call_update":
+            tool_id = str(update.get("toolCallId", ""))[:12]
+            status = str(update.get("status", ""))
+            self._logger.info("COPILOT_TOOL_UPDATE: %s [%s]", tool_id, status)
         else:
-            self._logger.debug(
-                "COPILOT_EVENT session=%s type=%s content_keys=%s",
-                session_id,
+            self._logger.info(
+                "COPILOT_EVENT: type=%s keys=%s",
                 session_update,
-                list(content.keys()) if content else "none",
+                list(update.keys()),
             )
 
     async def _stop_acp(self) -> None:
