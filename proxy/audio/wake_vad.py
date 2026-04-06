@@ -63,6 +63,9 @@ class WakeVadEngine:
         wake_match_partial: bool = False,
         stt_adapter: DeepgramSTTAdapter | None = None,
         stt_gate_allow: Callable[[], bool] | None = None,
+        stopword_phrases: list[str] | None = None,
+        stopword_enabled: Callable[[], bool] | None = None,
+        stopword_cooldown_ms: int = 1500,
     ) -> None:
         self._event_bus = event_bus
         self._audio_io = audio_io
@@ -88,6 +91,10 @@ class WakeVadEngine:
         self._stt = stt_adapter
         self._stt_gate_allow = stt_gate_allow
         self._recognizer: Any | None = None
+        self._stopword_phrases = stopword_phrases or []
+        self._stopword_enabled = stopword_enabled
+        self._stopword_cooldown_s = stopword_cooldown_ms / 1000.0
+        self._last_stopword_at = 0.0
 
     async def start(self) -> None:
         if self._running:
@@ -143,15 +150,21 @@ class WakeVadEngine:
             can_send_stt = self._stt_gate_allow() if self._stt_gate_allow is not None else True
             if self._stt is not None and self._stt.ready() and can_send_stt:
                 await self._stt.push_audio(chunk)
-            if not self._wake_should_trigger():
-                continue
+
             if self._recognizer.AcceptWaveform(chunk):
                 result = self._recognizer.Result()
                 if self._debug_transcripts:
                     text, _ = extract_recognizer_text(result)
                     if text:
                         self._logger.debug("Wake result text: %s", text)
-                if contains_wake_phrase(result, self._wake_phrases):
+                # Stopword check (active during THINKING/SPEAKING)
+                if self._stopword_should_trigger() and contains_wake_phrase(result, self._stopword_phrases):
+                    await self._event_bus.publish(Event(type=EventType.INTERRUPT))
+                    self._last_stopword_at = monotonic()
+                    self._reset_wake_recognizer()
+                    self._logger.info("Stopword detected — interrupting")
+                # Wake check (active during IDLE)
+                elif self._wake_should_trigger() and contains_wake_phrase(result, self._wake_phrases):
                     await self._event_bus.publish(Event(type=EventType.WAKE))
                     self._wake_armed = False
                     self._last_wake_at = monotonic()
@@ -201,6 +214,15 @@ class WakeVadEngine:
             if monotonic() - self._idle_entered_at < self._wake_rearm_guard_s:
                 return False
         if monotonic() - self._last_wake_at < self._wake_retrigger_cooldown_s:
+            return False
+        return True
+
+    def _stopword_should_trigger(self) -> bool:
+        if not self._stopword_phrases:
+            return False
+        if self._stopword_enabled is not None and not self._stopword_enabled():
+            return False
+        if monotonic() - self._last_stopword_at < self._stopword_cooldown_s:
             return False
         return True
 

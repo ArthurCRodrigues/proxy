@@ -58,6 +58,9 @@ class Settings:
     wake_retrigger_cooldown_ms: int = 1500
     wake_rearm_guard_ms: int = 1200
     wake_match_partial: bool = False
+    stopword_phrase: str = "stop"
+    stopword_aliases: str = "stop,shut up"
+    stopword_cooldown_ms: int = 1500
     deepgram_model: str = "nova-3"
     deepgram_language: str = "en-US"
     deepgram_endpointing_enabled: bool = True
@@ -131,6 +134,9 @@ class Settings:
             wake_rearm_guard_ms=int(os.getenv("PROXY_WAKE_REARM_GUARD_MS", "1200")),
             wake_match_partial=os.getenv("PROXY_WAKE_MATCH_PARTIAL", "0")
             in ("1", "true", "True"),
+            stopword_phrase=os.getenv("PROXY_STOPWORD_PHRASE", "stop"),
+            stopword_aliases=os.getenv("PROXY_STOPWORD_ALIASES", "stop,shut up"),
+            stopword_cooldown_ms=int(os.getenv("PROXY_STOPWORD_COOLDOWN_MS", "1500")),
             deepgram_model=os.getenv("PROXY_DEEPGRAM_MODEL", "nova-3"),
             deepgram_language=os.getenv("PROXY_DEEPGRAM_LANGUAGE", "en-US"),
             deepgram_endpointing_enabled=os.getenv("PROXY_DEEPGRAM_ENDPOINTING_ENABLED", "1")

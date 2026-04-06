@@ -20,12 +20,14 @@ class Orchestrator:
         event_bus: EventBus,
         on_wake: Callable[[], Awaitable[None]] | None = None,
         copilot_bridge: CopilotBridge | None = None,
+        on_interrupt: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._event_bus = event_bus
         self._ctx = OrchestratorContext()
         self._logger = get_logger("proxy.orchestrator")
         self._running = False
         self._on_wake = on_wake
+        self._on_interrupt = on_interrupt
         self._copilot = copilot_bridge
         self._listening_timeout_task: asyncio.Task[None] | None = None
         self._listening_timeout_ms = 10_000
@@ -97,6 +99,9 @@ class Orchestrator:
             text = str(event.payload.get("text", "")).strip()
             if text:
                 await self._copilot.send_user_turn(text, turn_id=self._ctx.turn_id)
+        if event.type == EventType.INTERRUPT:
+            if self._on_interrupt is not None:
+                await self._on_interrupt()
 
     def _on_state_change(self, previous: AssistantState, new: AssistantState) -> None:
         if new == AssistantState.LISTENING:

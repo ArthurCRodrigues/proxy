@@ -253,7 +253,20 @@ async def _run() -> None:
         echo_filter.record_assistant_text("yes")
         await playback.play_pcm(wake_audio)
 
-    orchestrator = Orchestrator(bus, on_wake=on_wake, copilot_bridge=copilot)
+    async def on_interrupt() -> None:
+        logger.info("Interrupt: cancelling copilot and TTS")
+        await copilot.hard_stop_turn()
+        await tts.cancel()
+        await playback.cancel()
+        # Drain TTS queue
+        while not tts_queue.empty():
+            try:
+                tts_queue.get_nowait()
+                tts_queue.task_done()
+            except asyncio.QueueEmpty:
+                break
+
+    orchestrator = Orchestrator(bus, on_wake=on_wake, copilot_bridge=copilot, on_interrupt=on_interrupt)
     orchestrator.set_listening_timeout(settings.listening_timeout_ms)
     runner = asyncio.create_task(orchestrator.run())
 
@@ -274,6 +287,9 @@ async def _run() -> None:
             wake_match_partial=settings.wake_match_partial,
             stt_adapter=stt,
             stt_gate_allow=_allow_stt_audio_forward,
+            stopword_phrases=[p.strip() for p in settings.stopword_aliases.split(",") if p.strip()],
+            stopword_enabled=lambda: orchestrator.context.state in (AssistantState.THINKING, AssistantState.SPEAKING),
+            stopword_cooldown_ms=settings.stopword_cooldown_ms,
         )
         await wake_vad.start()
         logger.info(
