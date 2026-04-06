@@ -89,3 +89,26 @@ def test_assistant_final_returns_to_idle() -> None:
     assert out.state == AssistantState.IDLE
     assert out.session_id is None
     assert out.turn_id is None
+
+
+def test_interrupt_from_thinking_returns_to_listening() -> None:
+    ctx = OrchestratorContext(state=AssistantState.THINKING, session_id="s", turn_id="t")
+    out = apply_event(ctx, Event(type=EventType.INTERRUPT))
+    assert out.state == AssistantState.LISTENING
+    assert out.session_id == "s"
+    assert out.turn_id is not None
+    assert out.turn_id != "t"
+
+
+def test_interrupt_from_speaking_returns_to_listening() -> None:
+    ctx = OrchestratorContext(state=AssistantState.SPEAKING, session_id="s", turn_id="t")
+    out = apply_event(ctx, Event(type=EventType.INTERRUPT))
+    assert out.state == AssistantState.LISTENING
+    assert out.session_id == "s"
+    assert out.turn_id is not None
+    assert out.turn_id != "t"
+
+
+def test_interrupt_from_idle_raises() -> None:
+    with pytest.raises(InvalidTransitionError):
+        apply_event(OrchestratorContext(), Event(type=EventType.INTERRUPT))
