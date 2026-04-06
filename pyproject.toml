@@ -24,8 +24,10 @@ dev = ["pytest>=8.0.0"]
 proxy = "proxy.main:cli"
 
 [tool.setuptools.packages.find]
+where = ["src"]
 include = ["proxy*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+pythonpath = ["src"]

@@ -340,7 +340,7 @@ def _install_service() -> None:
     import sys
     from pathlib import Path
 
-    project_dir = Path(__file__).resolve().parent.parent
+    project_dir = Path(__file__).resolve().parents[2]
     python = sys.executable
     service_dir = Path.home() / ".config" / "systemd" / "user"
     service_file = service_dir / "proxy.service"
@@ -353,6 +353,7 @@ def _install_service() -> None:
         f"[Service]\n"
         f"Type=simple\n"
         f"WorkingDirectory={project_dir}\n"
+        f"Environment=PYTHONPATH={project_dir / 'src'}\n"
         f"ExecStart={python} -m proxy.main\n"
         f"Restart=on-failure\n"
         f"RestartSec=5\n\n"
@@ -379,7 +380,7 @@ def _init() -> None:
     from io import BytesIO
     from pathlib import Path
 
-    project_dir = Path(__file__).resolve().parent.parent
+    project_dir = Path(__file__).resolve().parents[2]
     env_file = project_dir / ".env"
     env_example = project_dir / ".env.example"
     vosk_dir = project_dir / "assets" / "models" / "vosk-model-small-en-us-0.15"
