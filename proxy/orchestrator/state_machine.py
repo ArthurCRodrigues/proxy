@@ -81,6 +81,12 @@ def apply_event(ctx: OrchestratorContext, event: Event) -> OrchestratorContext:
                 session_id=ctx.session_id,
                 turn_id=ctx.turn_id,
             )
+        if event.type == EventType.INTERRUPT:
+            return OrchestratorContext(
+                state=AssistantState.LISTENING,
+                session_id=ctx.session_id,
+                turn_id=_new_id(),
+            )
         raise InvalidTransitionError(f"{state} cannot handle {event.type}")
 
     if state == AssistantState.SPEAKING:
@@ -91,6 +97,12 @@ def apply_event(ctx: OrchestratorContext, event: Event) -> OrchestratorContext:
                 state=AssistantState.IDLE,
                 session_id=None,
                 turn_id=None,
+            )
+        if event.type == EventType.INTERRUPT:
+            return OrchestratorContext(
+                state=AssistantState.LISTENING,
+                session_id=ctx.session_id,
+                turn_id=_new_id(),
             )
         raise InvalidTransitionError(f"{state} cannot handle {event.type}")
 
