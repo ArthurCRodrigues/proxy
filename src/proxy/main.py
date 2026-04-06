@@ -89,7 +89,7 @@ async def _run() -> None:
     speech_gate = SpeechGate(hold_ms=settings.stt_gate_hold_ms)
     echo_filter = EchoFilter(similarity_threshold=settings.stt_deecho_similarity_threshold)
     orchestrator: Orchestrator | None = None
-    tts_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=64)
+    tts_queue: asyncio.Queue[tuple[str | None, str | None, bool]] = asyncio.Queue(maxsize=64)
     tts_task: asyncio.Task[None] | None = None
     tts_text_buffer = ""
     tts_partial_seen_since_final = False
@@ -145,7 +145,7 @@ async def _run() -> None:
             turn_timer.stamp("user_final")
         asyncio.create_task(bus.publish(Event(type=EventType.USER_FINAL, payload={"text": text})))
 
-    def _on_assistant_partial(text: str) -> None:
+    def _on_assistant_partial(text: str, turn_id: str | None) -> None:
         nonlocal tts_text_buffer, tts_partial_seen_since_final
         if text:
             if turn_timer is not None and "first_partial" not in turn_timer._stamps:
@@ -164,11 +164,11 @@ async def _run() -> None:
             )
             for segment in segments:
                 try:
-                    tts_queue.put_nowait(segment)
+                    tts_queue.put_nowait((segment, turn_id, False))
                 except asyncio.QueueFull:
                     logger.debug("TTS queue full; dropping partial chunk")
 
-    def _on_assistant_final(text: str) -> None:
+    def _on_assistant_final(text: str, turn_id: str | None) -> None:
         nonlocal tts_text_buffer, tts_partial_seen_since_final
         if text:
             echo_filter.record_assistant_text(text)
@@ -189,18 +189,29 @@ async def _run() -> None:
             tts_partial_seen_since_final = False
             for segment in segments:
                 try:
-                    tts_queue.put_nowait(segment)
+                    tts_queue.put_nowait((segment, turn_id, False))
                 except asyncio.QueueFull:
                     logger.debug("TTS queue full; dropping final chunk")
+        tts_partial_seen_since_final = False
+        # Mark turn completion so state can return to IDLE only after playback has actually drained.
+        asyncio.create_task(tts_queue.put((None, turn_id, True)))
         if turn_timer is not None:
             turn_timer.stamp("assistant_final")
             turn_timer.log_summary()
 
     async def _tts_loop() -> None:
         while True:
-            text = await tts_queue.get()
+            text, turn_id, turn_done = await tts_queue.get()
             try:
-                cleaned = text.strip()
+                if turn_done:
+                    await bus.publish(
+                        Event(
+                            type=EventType.ASSISTANT_AUDIO_DONE,
+                            turn_id=turn_id,
+                        )
+                    )
+                    continue
+                cleaned = (text or "").strip()
                 if not cleaned:
                     continue
                 logger.info("TTS_OUTBOUND_CHUNK: %s", cleaned)
@@ -233,7 +244,7 @@ async def _run() -> None:
             logger.info("NARRATION: %s", text)
             echo_filter.record_assistant_text(text)
             try:
-                tts_queue.put_nowait(text)
+                tts_queue.put_nowait((text, None, False))
             except asyncio.QueueFull:
                 logger.debug("TTS queue full; dropping narration")
 

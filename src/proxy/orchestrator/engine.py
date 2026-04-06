@@ -44,7 +44,12 @@ class Orchestrator:
         if (
             event.turn_id is not None
             and event.turn_id != self._ctx.turn_id
-            and event.type in (EventType.ASSISTANT_PARTIAL, EventType.ASSISTANT_FINAL)
+            and event.type
+            in (
+                EventType.ASSISTANT_PARTIAL,
+                EventType.ASSISTANT_FINAL,
+                EventType.ASSISTANT_AUDIO_DONE,
+            )
         ):
             self._logger.debug(
                 "Dropping stale event: type=%s event_turn=%s active_turn=%s",

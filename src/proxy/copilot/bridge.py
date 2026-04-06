@@ -36,8 +36,8 @@ class CopilotBridge:
         model: str = "",
         allow_all: bool = True,
         instructions_path: str = _default_instructions_path(),
-        on_assistant_partial: Callable[[str], None] | None = None,
-        on_assistant_final: Callable[[str], None] | None = None,
+        on_assistant_partial: Callable[[str, str | None], None] | None = None,
+        on_assistant_final: Callable[[str, str | None], None] | None = None,
         on_narration: Callable[[str], None] | None = None,
     ) -> None:
         self._event_bus = event_bus
@@ -241,7 +241,7 @@ class CopilotBridge:
         if not text:
             return
         if self._on_assistant_partial is not None:
-            self._on_assistant_partial(text)
+            self._on_assistant_partial(text, turn_id)
         await self._event_bus.publish(
             Event(
                 type=EventType.ASSISTANT_PARTIAL,
@@ -258,8 +258,6 @@ class CopilotBridge:
         raw_text: str,
     ) -> None:
         final_text = raw_text
-        if self._on_assistant_final is not None and final_text:
-            self._on_assistant_final(final_text)
         await self._event_bus.publish(
             Event(
                 type=EventType.ASSISTANT_FINAL,
@@ -268,6 +266,8 @@ class CopilotBridge:
                 payload={"text": final_text},
             )
         )
+        if self._on_assistant_final is not None and final_text:
+            self._on_assistant_final(final_text, turn_id)
 
     async def _acp_ensure_started(self) -> None:
         if (
