@@ -149,6 +149,30 @@ Place an `instructions.md` file in the project root to give your agent custom co
 
 If no file is found, Proxy uses built-in defaults that tell the agent to respond in plain conversational language suitable for voice.
 
+### Wake sounds
+
+Proxy plays a short audio clip when the wake word is detected. You need to provide your own WAV files:
+
+- `assets/greetings/` — played on the first wake of a session (e.g. "Hello!", "Hey there!")
+- `assets/wake/` — played on subsequent wakes (e.g. "Yes?", "Hm?")
+- `assets/yes.wav` — fallback if the directories above are empty
+
+Place one or more `.wav` files (PCM 16-bit) in each directory. Proxy picks one at random each time.
+
+---
+
+## What's Next
+
+Proxy currently works with GitHub Copilot. Here's where it's headed:
+
+- **Claude Code support** — first priority. Proxy should work with the most popular agent runtimes, not just one.
+- **Agent-agnostic protocol** — a simple bridge interface so any coding agent can plug in.
+- **ElevenLabs WebSocket streaming** — true real-time TTS for lower latency.
+- **Alternative STT/TTS providers** — Whisper, local TTS, Azure, Google.
+- **Non-English language support** — wake word models and STT/TTS configs for other languages.
+
+See the full [roadmap](ROADMAP.md) for details.
+
 ---
 
 ## Contributing
