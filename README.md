@@ -1,139 +1,22 @@
-# Proxy
+# TARS (Proxy)
 
-Proxy is an event-driven voice assistant that sits between a user and GitHub Copilot CLI. It listens for a wake word through a local speech model, transcribes the user's voice via Deepgram, sends the transcription to a persistent Copilot ACP session, and speaks the response back through ElevenLabs TTS — all with streaming, low-latency playback.
+Give your coding agent a real voice in minutes.
 
-## How it works
+TARS is an open-source, voice-first runtime for coding agents. Say the wake word, speak your request, and hear spoken responses with low-latency streaming playback. No local voice-clone stack required.
 
-```
-Mic ─► AudioIO ─► WakeVadEngine (Vosk wake word + RMS VAD)
-                       │
-                       ├─ wake detected ──► EventBus ──► Orchestrator
-                       │                                     │
-                       └─ audio chunks ──► Deepgram STT      │
-                                               │             │
-                                          USER_FINAL ────────┘
-                                                              │
-                                                        CopilotBridge (ACP)
-                                                              │
-                                                     ASSISTANT_PARTIAL / FINAL
-                                                              │
-                                                    TTS chunking ─► ElevenLabs
-                                                                        │
-                                                                   PlaybackEngine ─► Speaker
-```
+## Why people use TARS
 
-## Lifecycle
+- Voice in, voice out for coding sessions without switching tools.
+- Keeps conversational context by reusing a persistent Copilot session.
+- Streams responses while the model is still generating, so replies feel live.
+- Built for local wake detection and practical day-to-day coding flow.
 
-1. On startup, Proxy launches a background Copilot ACP process and prewarms a standby session. The session is immediately bootstrapped with system instructions so subsequent prompts carry no bootstrap overhead.
+## The experience
 
-2. The system enters `IDLE` and the wake engine continuously listens for the configured wake phrase using a local Vosk model.
-
-3. When the wake word is detected, Proxy plays a random acknowledgment sound from a local assets directory, promotes the standby Copilot session to active, and begins prewarming the next standby session. The state machine transitions through `WAKE_DETECTED` → `LISTENING`.
-
-4. While in `LISTENING`, audio is forwarded to Deepgram for streaming transcription. A local RMS-based VAD detects end-of-speech silence and triggers Deepgram to finalize the transcript. If the user says a cancel phrase (e.g. "never mind"), the system returns to `IDLE`. A configurable inactivity timeout does the same if the user stays silent.
-
-5. On a finalized transcript (`USER_FINAL`), the state moves to `THINKING` and the text is sent to the active Copilot session. No new session is created — the existing one preserves full conversational context.
-
-6. As Copilot streams back partial responses, they are buffered and split into speakable chunks at natural sentence boundaries. Each chunk is sent to ElevenLabs for synthesis and played back sequentially, so the user hears speech while Copilot is still generating. The state is `SPEAKING` during this phase.
-
-7. When Copilot emits its final response, the state returns to `IDLE` and Proxy is ready for the next wake word. The same Copilot session remains active for conversational continuity unless the user explicitly says "start new session."
-
-## State machine
-
-```
-IDLE ──WAKE──► WAKE_DETECTED ──READY──► LISTENING ──USER_FINAL──► THINKING
-  ▲                                        │                         │
-  │                              CANCEL / TIMEOUT              ASSISTANT_PARTIAL
-  │                                        │                         │
-  └────────────────────────────────────────┘                         ▼
-  ▲                                                              SPEAKING
-  │                                                                  │
-  └──────────────────── ASSISTANT_FINAL ─────────────────────────────┘
-```
-
-States: `IDLE`, `WAKE_DETECTED`, `LISTENING`, `THINKING`, `SPEAKING`, `STOPPED`
-
-Global transitions:
-- `STOP` → `STOPPED` (from any state)
-- `ERROR`, `USER_PARTIAL` → no-op (from any state)
-
-## Event types
-
-| Event | Published by | Purpose |
-|---|---|---|
-| `WAKE` | WakeVadEngine | Wake phrase detected by Vosk |
-| `READY` | Orchestrator | Wake handling complete, begin listening |
-| `USER_PARTIAL` | main (STT callback) | Interim transcript; resets listening timeout |
-| `USER_FINAL` | main (STT callback) | Finalized transcript; triggers Copilot prompt |
-| `CANCEL` | main (STT callback) | Cancel phrase detected; returns to IDLE |
-| `LISTENING_TIMEOUT` | Orchestrator | No speech activity within timeout window |
-| `ASSISTANT_PARTIAL` | CopilotBridge | Streaming text chunk from Copilot |
-| `ASSISTANT_FINAL` | CopilotBridge | Complete response from Copilot |
-| `ERROR` | CopilotBridge | ACP prompt failure (logged, no state change) |
-| `STOP` | main (shutdown) | Terminates the orchestrator loop |
-
-## Anti self-listening
-
-Two layers prevent Proxy from transcribing its own voice:
-
-- `SpeechGate` — blocks STT acceptance for a configurable hold window after TTS playback starts.
-- `EchoFilter` — keeps recent assistant text and rejects STT transcripts with high similarity (SequenceMatcher ratio).
-
-STT forwarding is also gated by orchestrator state — audio only reaches Deepgram while in `LISTENING`.
-
-## Copilot integration
-
-`CopilotBridge` communicates exclusively through ACP (Agent Control Protocol): it starts `copilot --acp --stdio`, initializes a JSON-RPC connection, creates sessions via `session/new`, and sends prompts via `session/prompt`. Streaming deltas arrive through `session/update` notifications.
-
-`SessionPool` manages a standby + active session pair. On wake, the standby is promoted to active and a new standby is prewarmed in the background. Bootstrap instructions are sent once per session at creation time.
-
-## TTS pipeline
-
-Copilot partial deltas are appended into a text buffer. A chunking layer splits the buffer at sentence boundaries (`.!?` or newline) once a minimum character threshold is reached, with a force-flush fallback for long boundaryless runs. Each chunk is synthesized by ElevenLabs and played sequentially. On the final response, any remaining buffer is flushed.
-
-Configuration:
-- `PROXY_TTS_SPEAK_PARTIALS` — enable streaming partial speech (default: on)
-- `PROXY_TTS_PARTIAL_MIN_CHARS` — minimum chars before emitting a chunk
-- `PROXY_TTS_PARTIAL_FORCE_FLUSH_CHARS` — force emit without a boundary (`0` disables)
-
-## Repository structure
-
-```
-proxy/
-  main.py                    # Wiring, runtime orchestration, STT/TTS callbacks
-  config.py                  # Environment-backed settings (PROXY_* env vars)
-  types.py                   # EventType, AssistantState enums, Event dataclass
-  audio/
-    io.py                    # Mic capture stream (sounddevice)
-    wake_vad.py              # Vosk wake word detection + RMS VAD
-    playback.py              # PCM audio output
-    assets.py                # WAV loading, wake sound selection
-  stt/
-    deepgram_adapter.py      # Deepgram websocket streaming STT
-    filtering.py             # SpeechGate + EchoFilter
-  copilot/
-    bridge.py                # ACP JSON-RPC transport, prompt execution, bootstrap
-    session_pool.py          # Standby/active session management
-  tts/
-    elevenlabs_adapter.py    # ElevenLabs synthesis
-    chunking.py              # Partial/final text segmentation
-  orchestrator/
-    event_bus.py             # Async queue event bus
-    state_machine.py         # Deterministic state reducer
-    engine.py                # Event loop, side effects, listening timeout
-  observability/
-    logger.py                # Logger configuration
-tests/
-  unit/                      # State machine, bridge, chunking, adapters, VAD
-```
-
-## Requirements
-
-- Python 3.11+
-- PortAudio (via `sounddevice`)
-- Vosk model for wake detection
-- Copilot CLI installed and authenticated
-- API keys: Deepgram, ElevenLabs
+1. Say the wake word.
+2. Ask your coding question out loud.
+3. TARS transcribes with Deepgram, sends to Copilot, and speaks back with ElevenLabs.
+4. Keep going in the same session with full context continuity.
 
 ## Quick start
 
@@ -141,29 +24,106 @@ tests/
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-cp .env.example .env       # fill in API keys
+cp .env.example .env
 python -m proxy.main
 ```
 
+Then fill in API keys in `.env` and make sure Copilot CLI is installed and authenticated.
+
+## Requirements
+
+- Python 3.11+
+- PortAudio (used by `sounddevice`)
+- A Vosk model for wake detection
+- Copilot CLI
+- Deepgram API key
+- ElevenLabs API key and voice ID
+
+## How it works
+
+```text
+Mic
+  -> AudioIO
+  -> WakeVadEngine (Vosk + RMS VAD)
+  -> Deepgram STT
+  -> CopilotBridge (ACP)
+  -> TTS chunking
+  -> ElevenLabs
+  -> PlaybackEngine
+  -> Speaker
+```
+
+### Runtime flow
+
+- `IDLE`: waits for wake word.
+- `WAKE_DETECTED` -> `LISTENING`: promotes a prewarmed Copilot session and starts listening.
+- `THINKING`: sends finalized user text to Copilot.
+- `SPEAKING`: streams partial assistant text as spoken chunks.
+- `IDLE`: returns ready for the next turn.
+
+## What makes TARS feel fast
+
+- Standby session prewarm: ready-to-go session activation on wake.
+- Streaming pipeline end to end: STT, model output, and TTS are all incremental.
+- Sentence-aware chunking: speech starts early while keeping natural boundaries.
+
+## Built-in protections
+
+- Anti self-listening with `SpeechGate` and `EchoFilter`.
+- State-gated STT forwarding so only user-intent windows are transcribed.
+- Cancel commands and listening timeout handling in the orchestration loop.
+
+## Copilot integration details
+
+TARS uses Copilot ACP (`copilot --acp --stdio`) with JSON-RPC. It creates and manages sessions, sends prompts through `session/prompt`, and consumes streaming deltas from `session/update`.
+
+## Repository structure
+
+```text
+proxy/
+  main.py
+  config.py
+  types.py
+  audio/
+  stt/
+  copilot/
+  tts/
+  orchestrator/
+  observability/
+tests/
+  unit/
+docs/
+```
+
+## Configuration
+
+Use `.env.example` as the full reference. The main groups are:
+
+- Credentials: Deepgram and ElevenLabs keys
+- Audio I/O: sample rate, channels, device selection
+- Wake and VAD: phrase, aliases, thresholds, cooldowns
+- STT behavior: endpointing, interim transcripts, reconnect settings
+- Turn controls: gate hold, echo filtering, timeout, cancel commands
+- Copilot bridge: command, model, instruction path
+- TTS partial speech: chunk size and force flush controls
+
 ## Wake model setup
 
-Place a Vosk model at `assets/models/vosk-model-small-en-us-0.15`, or set `PROXY_VOSK_MODEL_PATH` to a custom location.
-
-## Environment configuration
-
-See `.env.example` for all available settings. Key groups:
-
-- API credentials: `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`
-- Runtime: `PROXY_LOG_LEVEL`, `PROXY_QUEUE_MAXSIZE`
-- Audio: sample rate, channels, chunk size, input device
-- Wake/VAD: wake phrase and aliases, Vosk path, RMS thresholds, cooldowns
-- Deepgram: model, language, endpointing, utterance end, keyterms
-- Speech turn: STT gate, echo filter, listening timeout, cancel commands
-- Copilot: command, model, bootstrap instructions path
-- TTS: partial speech controls, chunk thresholds
+Place a Vosk model at `assets/models/vosk-model-small-en-us-0.15`, or set `PROXY_VOSK_MODEL_PATH` to your custom model directory.
 
 ## Testing
 
 ```bash
 pytest -q
 ```
+
+## Roadmap and docs
+
+- Lifecycle walkthrough: `docs/lifecycle.md`
+- State machine details: `docs/state-machine.md`
+- Copilot ACP integration: `docs/copilot-integration.md`
+- Launch direction: `docs/project-launch-roadmap.md`
+
+## Contributing
+
+Issues and pull requests are welcome. If you are building voice support for another coding agent, this codebase is intentionally structured so the agent bridge layer can be extended without rewriting the wake, STT, TTS, and orchestration core.
