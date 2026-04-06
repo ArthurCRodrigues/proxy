@@ -40,7 +40,6 @@ Proxy should work for everyone, everywhere.
 
 Making it easy to extend and contribute.
 
-- **`proxy init` CLI** — Guided first-time setup that validates dependencies, downloads the wake model, and walks through API key configuration.
 - **`proxy devices`** — List available audio input devices with their index, name, and sample rate so users can easily configure `PROXY_AUDIO_INPUT_DEVICE`.
 - **Plugin system** — A clean interface for registering custom STT, TTS, and agent providers without modifying core code.
 - **Latency benchmarking** — Extend the existing Copilot latency benchmark to cover the full pipeline: wake detection, STT, agent TTFB, TTS, and time-to-first-audio.

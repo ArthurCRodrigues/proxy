@@ -18,6 +18,14 @@ Wake word → Speech-to-text → Copilot → Text-to-speech → Speaker
 
 ---
 
+## Why Proxy?
+
+You already have a coding agent. It's good at what it does. But every time you want to ask it something, you stop coding, switch context, type a prompt, wait, read the response, and switch back.
+
+Proxy sits between you and your agent — that's it. It's not a new AI, not a framework, not a platform. It's a voice layer that proxies your speech to the agent and speaks the response back. Your agent does the thinking. Proxy just gives it a voice.
+
+---
+
 ## What does it look like?
 
 ```
@@ -59,54 +67,34 @@ No browser tabs. No copy-paste. No keyboard. Just your voice and your code.
 
 ## Getting Started
 
-### Prerequisites
-
-- Python 3.11+
-- [PortAudio](http://www.portaudio.com/) (`brew install portaudio` on macOS)
-- [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) installed and authenticated
+- Python 3.11+, [PortAudio](http://www.portaudio.com/), [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) installed and authenticated
 - API keys for [Deepgram](https://console.deepgram.com) (STT) and [ElevenLabs](https://elevenlabs.io/api) (TTS)
-
-### Install
+- A [Vosk model](https://alphacephei.com/vosk/models) for wake word detection
 
 ```bash
 git clone https://github.com/your-org/proxy.git
 cd proxy
-python -m venv .venv
-source .venv/bin/activate
 pip install -e ".[dev]"
+proxy init                     # guided setup: downloads model, configures API keys
+proxy                          # say "Proxy" and start talking
 ```
 
-### Configure
+### Run at startup (Linux)
+
+Make sure your `.env` file is configured with your API keys first, then:
 
 ```bash
-cp .env.example .env
+proxy setup
 ```
 
-Fill in your API keys:
-
-```env
-DEEPGRAM_API_KEY=your_key_here
-ELEVENLABS_API_KEY=your_key_here
-ELEVENLABS_VOICE_ID=your_voice_id_here
-```
-
-### Download wake word model
+This installs a systemd user service that launches Proxy on login. Useful commands after installing:
 
 ```bash
-mkdir -p assets/models
-cd assets/models
-wget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
-unzip vosk-model-small-en-us-0.15.zip
-cd ../..
+systemctl --user status proxy     # check if it's running
+journalctl --user -u proxy -f     # follow the logs
+systemctl --user stop proxy       # stop it
+systemctl --user disable proxy    # remove from startup
 ```
-
-### Run
-
-```bash
-python -m proxy.main
-```
-
-Say **"Proxy"** and start talking.
 
 ---
 

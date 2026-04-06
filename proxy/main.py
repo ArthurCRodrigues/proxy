@@ -335,10 +335,189 @@ async def _run() -> None:
             runner.cancel()
 
 
+def _install_service() -> None:
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    project_dir = Path(__file__).resolve().parent.parent
+    python = sys.executable
+    service_dir = Path.home() / ".config" / "systemd" / "user"
+    service_file = service_dir / "proxy.service"
+
+    service_dir.mkdir(parents=True, exist_ok=True)
+    service_file.write_text(
+        f"[Unit]\n"
+        f"Description=Proxy — voice layer for your coding agent\n"
+        f"After=network.target sound.target\n\n"
+        f"[Service]\n"
+        f"Type=simple\n"
+        f"WorkingDirectory={project_dir}\n"
+        f"ExecStart={python} -m proxy.main\n"
+        f"Restart=on-failure\n"
+        f"RestartSec=5\n\n"
+        f"[Install]\n"
+        f"WantedBy=default.target\n"
+    )
+
+    subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
+    subprocess.run(["systemctl", "--user", "enable", "proxy.service"], check=True)
+    subprocess.run(["systemctl", "--user", "start", "proxy.service"], check=True)
+
+    print("Proxy installed as a systemd user service.")
+    print("  Status:  systemctl --user status proxy")
+    print("  Logs:    journalctl --user -u proxy -f")
+    print("  Stop:    systemctl --user stop proxy")
+    print("  Disable: systemctl --user disable proxy")
+
+
+def _init() -> None:
+    import shutil
+    import subprocess
+    import urllib.request
+    import zipfile
+    from io import BytesIO
+    from pathlib import Path
+
+    project_dir = Path(__file__).resolve().parent.parent
+    env_file = project_dir / ".env"
+    env_example = project_dir / ".env.example"
+    vosk_dir = project_dir / "assets" / "models" / "vosk-model-small-en-us-0.15"
+
+    print("\nProxy Setup")
+    print("=" * 40)
+
+    # 1. PortAudio
+    print("\n[1/5] Checking PortAudio...")
+    try:
+        import sounddevice  # noqa: F401
+        print("      ✓ found")
+    except (ImportError, OSError):
+        print("      ✗ not found")
+        print("      Install it: brew install portaudio (macOS) or apt install portaudio19-dev (Linux)")
+        return
+
+    # 2. Vosk model
+    print("\n[2/5] Checking Vosk model...")
+    if vosk_dir.exists():
+        print(f"      ✓ found at {vosk_dir}")
+    else:
+        answer = input("      Not found. Download now? [Y/n] ").strip().lower()
+        if answer in ("", "y", "yes"):
+            url = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
+            print(f"      Downloading (~40MB)...")
+            try:
+                data = urllib.request.urlopen(url).read()
+                models_dir = vosk_dir.parent
+                models_dir.mkdir(parents=True, exist_ok=True)
+                with zipfile.ZipFile(BytesIO(data)) as zf:
+                    zf.extractall(models_dir)
+                print("      ✓ downloaded")
+            except Exception as exc:
+                print(f"      ✗ download failed: {exc}")
+                return
+        else:
+            print("      Skipped. Set PROXY_VOSK_MODEL_PATH in .env to your model path.")
+
+    # 3. Deepgram
+    print("\n[3/5] Deepgram API key (speech-to-text)")
+    print("      Get one at https://console.deepgram.com")
+    deepgram_key = input("      Key: ").strip()
+    if not deepgram_key:
+        print("      ✗ skipped")
+    else:
+        print("      ✓ saved")
+
+    # 4. ElevenLabs
+    print("\n[4/5] ElevenLabs (text-to-speech)")
+    print("      Get one at https://elevenlabs.io/api")
+    elevenlabs_key = input("      API Key: ").strip()
+    elevenlabs_voice = input("      Voice ID: ").strip()
+    if not elevenlabs_key or not elevenlabs_voice:
+        print("      ✗ skipped")
+    else:
+        print("      ✓ saved")
+
+    # 5. Copilot
+    print("\n[5/5] Checking Copilot CLI...")
+    if shutil.which("copilot"):
+        print("      ✓ copilot found")
+    else:
+        print("      ✗ copilot not found in PATH")
+        print("      Install: https://docs.github.com/en/copilot/github-copilot-in-the-cli")
+
+    # Write .env
+    print()
+    if env_file.exists():
+        overwrite = input(".env already exists. Overwrite? [y/N] ").strip().lower()
+        if overwrite not in ("y", "yes"):
+            print("Keeping existing .env")
+        else:
+            _write_env(env_file, env_example, deepgram_key, elevenlabs_key, elevenlabs_voice)
+    else:
+        _write_env(env_file, env_example, deepgram_key, elevenlabs_key, elevenlabs_voice)
+
+    # Optional: startup service
+    print()
+    startup = input("Start on login? (Linux systemd) [y/N] ").strip().lower()
+    if startup in ("y", "yes"):
+        try:
+            _install_service()
+        except Exception as exc:
+            print(f"Service install failed: {exc}")
+
+    print("\nReady! Run `proxy` to start.\n")
+
+
+def _write_env(
+    env_file: "Path",
+    env_example: "Path",
+    deepgram_key: str,
+    elevenlabs_key: str,
+    elevenlabs_voice: str,
+) -> None:
+    from pathlib import Path
+
+    if env_example.exists():
+        content = env_example.read_text(encoding="utf-8")
+    else:
+        content = ""
+
+    replacements = {
+        "DEEPGRAM_API_KEY=": f"DEEPGRAM_API_KEY={deepgram_key}",
+        "ELEVENLABS_API_KEY=": f"ELEVENLABS_API_KEY={elevenlabs_key}",
+        "ELEVENLABS_VOICE_ID=": f"ELEVENLABS_VOICE_ID={elevenlabs_voice}",
+    }
+
+    lines = content.splitlines()
+    result = []
+    for line in lines:
+        replaced = False
+        for prefix, replacement in replacements.items():
+            if line.strip().startswith(prefix) and line.strip() == prefix:
+                result.append(replacement)
+                replaced = True
+                break
+        if not replaced:
+            result.append(line)
+
+    env_file.write_text("\n".join(result) + "\n", encoding="utf-8")
+    print(f"      Wrote {env_file}")
+
+
 def cli() -> None:
     parser = argparse.ArgumentParser(description="Proxy voice assistant")
-    parser.parse_args()
-    asyncio.run(_run())
+    sub = parser.add_subparsers(dest="command")
+    sub.add_parser("init", help="Guided first-time setup")
+    sub.add_parser("setup", help="Install Proxy as a startup service (Linux)")
+    args = parser.parse_args()
+
+    if args.command == "init":
+        _init()
+    elif args.command == "setup":
+        _install_service()
+    else:
+        asyncio.run(_run())
 
 
 if __name__ == "__main__":
