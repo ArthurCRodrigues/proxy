@@ -268,9 +268,12 @@ async def _run() -> None:
         turn_timer.stamp("ready")
 
     async def on_interrupt() -> None:
+        nonlocal tts_text_buffer, tts_partial_seen_since_final
         logger.info("Interrupt: cancelling copilot and TTS")
         await copilot.hard_stop_turn()
         await playback.cancel()
+        tts_text_buffer = ""
+        tts_partial_seen_since_final = False
         # Drain TTS queue
         while not tts_queue.empty():
             try:
