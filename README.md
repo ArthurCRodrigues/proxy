@@ -4,8 +4,6 @@
 
 ### Give your coding agent a voice.
 
-Talk to GitHub Copilot like a colleague. No typing. No context switching. Just speak.
-
 Wake word → Speech-to-text → Copilot → Text-to-speech → Speaker
 
 *All streaming. All low-latency. Fully hands-free.*
