@@ -217,6 +217,15 @@ async def _run() -> None:
         handle = await session_pool.reset_active()
         logger.info("Copilot session reset: active_session=%s", handle.session_id)
 
+    def _on_narration(text: str) -> None:
+        if text:
+            logger.info("NARRATION: %s", text)
+            echo_filter.record_assistant_text(text)
+            try:
+                tts_queue.put_nowait(text)
+            except asyncio.QueueFull:
+                logger.debug("TTS queue full; dropping narration")
+
     copilot = CopilotBridge(
         event_bus=bus,
         command=settings.copilot_command,
@@ -225,6 +234,7 @@ async def _run() -> None:
         instructions_path=settings.copilot_instructions_path,
         on_assistant_partial=_on_assistant_partial,
         on_assistant_final=_on_assistant_final,
+        on_narration=_on_narration,
     )
     session_pool = SessionPool(bridge=copilot)
     tts_task = asyncio.create_task(_tts_loop())

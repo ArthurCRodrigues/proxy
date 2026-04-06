@@ -38,6 +38,7 @@ class CopilotBridge:
         instructions_path: str = _default_instructions_path(),
         on_assistant_partial: Callable[[str], None] | None = None,
         on_assistant_final: Callable[[str], None] | None = None,
+        on_narration: Callable[[str], None] | None = None,
     ) -> None:
         self._event_bus = event_bus
         self._command = command
@@ -58,6 +59,10 @@ class CopilotBridge:
         self._acp_initialized = False
         self._on_assistant_partial = on_assistant_partial
         self._on_assistant_final = on_assistant_final
+        self._on_narration = on_narration
+        self._last_thought = ""
+        self._tool_batch: list[dict] = []
+        self._tool_batch_task: asyncio.Task[None] | None = None
 
     async def prewarm_session(self) -> CopilotSessionHandle:
         session_id = await self._acp_new_session()
@@ -426,13 +431,18 @@ class CopilotBridge:
                 if state.emit_events:
                     await self._emit_assistant_partial(session_id, state.turn_id, text)
         elif session_update == "agent_thought_chunk":
-            text = str(content.get("text", ""))
-            if text:
+            text = str(content.get("text", "")).strip()
+            if text and text != self._last_thought:
+                self._last_thought = text
                 self._logger.info("COPILOT_THOUGHT: %s", text)
+                self._emit_narration(text)
         elif session_update == "tool_call":
             title = str(update.get("title", ""))
             status = str(update.get("status", ""))
             self._logger.info("COPILOT_TOOL_CALL: %s [%s]", title, status)
+            if status == "pending":
+                self._tool_batch.append(update)
+                self._schedule_tool_batch_flush()
         elif session_update == "tool_call_update":
             tool_id = str(update.get("toolCallId", ""))[:12]
             status = str(update.get("status", ""))
@@ -443,6 +453,48 @@ class CopilotBridge:
                 session_update,
                 list(update.keys()),
             )
+
+    def _emit_narration(self, text: str) -> None:
+        if self._on_narration is not None:
+            self._on_narration(text)
+
+    def _schedule_tool_batch_flush(self) -> None:
+        if self._tool_batch_task is not None and not self._tool_batch_task.done():
+            return
+        self._tool_batch_task = asyncio.create_task(self._flush_tool_batch())
+
+    async def _flush_tool_batch(self) -> None:
+        await asyncio.sleep(0.5)
+        batch = self._tool_batch
+        self._tool_batch = []
+        if not batch:
+            return
+        if len(batch) == 1:
+            title = str(batch[0].get("title", ""))
+            kind = str(batch[0].get("kind", ""))
+            if kind == "read" and title:
+                name = title.rsplit("/", 1)[-1] if "/" in title else title
+                summary = f"Reading {name}"
+            elif title.startswith("rg") or title == "rg":
+                summary = "Searching the codebase"
+            elif title:
+                summary = title
+            else:
+                summary = "Working"
+        else:
+            read_count = sum(1 for t in batch if t.get("kind") == "read")
+            search_count = sum(1 for t in batch if str(t.get("title", "")).startswith("rg") or str(t.get("title", "")) == "rg")
+            parts = []
+            if read_count:
+                parts.append(f"reading {read_count} files")
+            if search_count:
+                parts.append("searching the codebase")
+            other = len(batch) - read_count - search_count
+            if other:
+                parts.append(f"{other} other actions")
+            summary = ", ".join(parts).capitalize() if parts else "Working"
+        self._logger.info("COPILOT_TOOL_SUMMARY: %s", summary)
+        self._emit_narration(summary)
 
     async def _stop_acp(self) -> None:
         if self._acp_reader_task is not None and not self._acp_reader_task.done():
