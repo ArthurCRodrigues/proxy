@@ -6,7 +6,12 @@ import wave
 import pytest
 
 from proxy.audio.assets import load_wav_pcm
-from proxy.audio.io import frames_per_chunk, normalize_input_device, resolve_input_device
+from proxy.audio.io import (
+    frames_per_chunk,
+    list_input_devices,
+    normalize_input_device,
+    resolve_input_device,
+)
 from proxy.audio.playback import split_pcm_chunks
 
 
@@ -45,6 +50,23 @@ def test_resolve_input_device_by_substring() -> None:
 
     resolved = resolve_input_device(FakeSD(), "C922 Pro Stream Webcam")
     assert resolved == 1
+
+
+def test_list_input_devices_only_returns_inputs() -> None:
+    class FakeSD:
+        @staticmethod
+        def query_devices(device=None, kind=None):
+            return [
+                {"name": "Output Device", "max_input_channels": 0, "default_samplerate": 44100.0},
+                {"name": "USB Mic", "max_input_channels": 1, "default_samplerate": 48000.0},
+                {"name": "Webcam Mic", "max_input_channels": 2, "default_samplerate": 16000.0},
+            ]
+
+    devices = list_input_devices(FakeSD())
+    assert devices == [
+        (1, "USB Mic", 48000),
+        (2, "Webcam Mic", 16000),
+    ]
 
 
 def test_split_pcm_chunks() -> None:

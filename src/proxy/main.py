@@ -5,7 +5,7 @@ import asyncio
 import re
 
 from proxy.audio.assets import choose_wake_sounds_dir, load_random_wake_audio
-from proxy.audio.io import AudioIO
+from proxy.audio.io import AudioIO, list_input_devices
 from proxy.audio.playback import PlaybackEngine
 from proxy.audio.wake_vad import WakeVadEngine
 from proxy.copilot.bridge import CopilotBridge
@@ -520,17 +520,38 @@ def _write_env(
     print(f"      Wrote {env_file}")
 
 
+def _devices() -> None:
+    try:
+        devices = list_input_devices()
+    except RuntimeError as exc:
+        print(f"Unable to list input devices: {exc}")
+        return
+
+    if not devices:
+        print("No audio input devices found.")
+        return
+
+    idx_width = max(len("INDEX"), max(len(str(idx)) for idx, _, _ in devices))
+    rate_width = max(len("RATE"), max(len(str(rate)) for _, _, rate in devices))
+    print(f"{'INDEX':>{idx_width}}  {'RATE':>{rate_width}}  NAME")
+    for idx, name, sample_rate in devices:
+        print(f"{idx:>{idx_width}}  {sample_rate:>{rate_width}}  {name}")
+
+
 def cli() -> None:
     parser = argparse.ArgumentParser(description="Proxy voice assistant")
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("init", help="Guided first-time setup")
     sub.add_parser("setup", help="Install Proxy as a startup service (Linux)")
+    sub.add_parser("devices", help="List available audio input devices")
     args = parser.parse_args()
 
     if args.command == "init":
         _init()
     elif args.command == "setup":
         _install_service()
+    elif args.command == "devices":
+        _devices()
     else:
         asyncio.run(_run())
 

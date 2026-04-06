@@ -62,6 +62,18 @@ def resolve_input_device(sd: Any, input_device: str | int | None) -> int | None:
     raise ValueError(f"No input device matching '{device}'. Available input devices: {available}")
 
 
+def list_input_devices(sd: Any | None = None) -> list[tuple[int, str, int]]:
+    sounddevice = sd or _import_sounddevice()
+    devices: list[tuple[int, str, int]] = []
+    for idx, info in enumerate(sounddevice.query_devices()):
+        if int(info.get("max_input_channels", 0)) <= 0:
+            continue
+        name = str(info.get("name", ""))
+        sample_rate = int(round(float(info.get("default_samplerate", 0))))
+        devices.append((idx, name, sample_rate))
+    return devices
+
+
 class AudioIO:
     def __init__(
         self,
