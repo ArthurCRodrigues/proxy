@@ -13,7 +13,7 @@ from proxy.types import Event, EventType
 
 
 def _default_instructions_path() -> str:
-    return str(Path(__file__).resolve().parents[2] / "copilot-instructions.md")
+    return str(Path(__file__).resolve().parents[2] / "instructions.md")
 
 
 @dataclass

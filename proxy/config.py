@@ -24,7 +24,7 @@ def _parse_csv(value: str) -> tuple[str, ...]:
 
 
 def _default_copilot_instructions_path() -> str:
-    return str(Path(__file__).resolve().parent.parent / "copilot-instructions.md")
+    return str(Path(__file__).resolve().parent.parent / "instructions.md")
 
 
 @dataclass(frozen=True)
@@ -89,7 +89,7 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         _load_dotenv()
-        copilot_instructions_path = os.getenv("PROXY_COPILOT_INSTRUCTIONS_PATH")
+        copilot_instructions_path = os.getenv("PROXY_INSTRUCTIONS_PATH")
         if (
             copilot_instructions_path is None
             or copilot_instructions_path.strip() == ""

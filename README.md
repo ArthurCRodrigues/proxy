@@ -145,6 +145,14 @@ All settings are environment variables. See [`.env.example`](.env.example) for t
 
 ---
 
+### Custom instructions
+
+Place an `instructions.md` file in the project root to give your agent custom context. This file is sent as system instructions when the session starts. Use it to tell the agent about your project, preferred response style, or domain-specific knowledge.
+
+If no file is found, Proxy uses built-in defaults that tell the agent to respond in plain conversational language suitable for voice.
+
+---
+
 ## Contributing
 
 Proxy is built to be extended. Some areas where contributions would be especially valuable:

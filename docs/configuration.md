@@ -78,4 +78,4 @@ These have sensible defaults and rarely need changing. Set them as environment v
 | `PROXY_TTS_SPEAK_PARTIALS` | `1` | Stream TTS from partials |
 | `PROXY_TTS_PARTIAL_MIN_CHARS` | `12` | Min chars before emitting a TTS chunk |
 | `PROXY_TTS_PARTIAL_FORCE_FLUSH_CHARS` | `72` | Force-emit without boundary |
-| `PROXY_COPILOT_INSTRUCTIONS_PATH` | `copilot-instructions.md` | Bootstrap instructions file |
+| `PROXY_INSTRUCTIONS_PATH` | `instructions.md` | Bootstrap instructions file |
