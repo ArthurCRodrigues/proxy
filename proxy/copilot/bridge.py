@@ -362,6 +362,8 @@ class CopilotBridge:
                     self._logger.debug("Ignoring non-JSON ACP line: %r", raw)
                     continue
 
+                self._logger.debug("ACP_RAW: %s", raw[:1000])
+
                 if "id" in message and ("result" in message or "error" in message):
                     msg_id = message.get("id")
                     if isinstance(msg_id, int):
