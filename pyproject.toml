@@ -3,12 +3,12 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tars-voice-assistant"
+name = "proxy-voice"
 version = "0.1.0"
-description = "Wake-word voice orchestrator for Copilot CLI coding sessions."
+description = "Give your coding agent a voice. Wake word, speech-to-text, agent, text-to-speech — all streaming, all low-latency."
 readme = "README.md"
 requires-python = ">=3.11"
-authors = [{ name = "TARS Project" }]
+license = {text = "MIT"}
 dependencies = [
   "numpy>=1.26.0",
   "sounddevice>=0.4.7",
@@ -21,10 +21,10 @@ dependencies = [
 dev = ["pytest>=8.0.0"]
 
 [project.scripts]
-tars = "tars.main:cli"
+proxy = "proxy.main:cli"
 
 [tool.setuptools.packages.find]
-include = ["tars*"]
+include = ["proxy*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
