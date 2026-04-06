@@ -438,7 +438,6 @@ class CopilotBridge:
             if text and text != self._last_thought:
                 self._last_thought = text
                 self._logger.info("COPILOT_THOUGHT: %s", text)
-                self._emit_narration(text)
         elif session_update == "tool_call":
             title = str(update.get("title", ""))
             status = str(update.get("status", ""))

@@ -256,7 +256,6 @@ async def _run() -> None:
     async def on_interrupt() -> None:
         logger.info("Interrupt: cancelling copilot and TTS")
         await copilot.hard_stop_turn()
-        await tts.cancel()
         await playback.cancel()
         # Drain TTS queue
         while not tts_queue.empty():
