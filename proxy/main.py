@@ -12,6 +12,7 @@ from proxy.copilot.bridge import CopilotBridge
 from proxy.copilot.session_pool import SessionPool
 from proxy.config import Settings
 from proxy.observability.logger import configure_logger, get_logger
+from proxy.observability.timing import TurnTimer
 from proxy.orchestrator.engine import Orchestrator
 from proxy.orchestrator.event_bus import EventBus
 from proxy.stt.deepgram_adapter import DeepgramSTTAdapter
@@ -94,6 +95,7 @@ async def _run() -> None:
     tts_partial_seen_since_final = False
     cancel_commands = _parse_cancel_commands(settings.cancel_commands)
     first_wake = True
+    turn_timer: TurnTimer | None = None
 
     def _allow_stt_audio_forward() -> bool:
         if orchestrator is None:
@@ -139,11 +141,15 @@ async def _run() -> None:
             logger.info("Session reset command detected from voice: %s", text)
             asyncio.create_task(_reset_copilot_session())
             return
+        if turn_timer is not None:
+            turn_timer.stamp("user_final")
         asyncio.create_task(bus.publish(Event(type=EventType.USER_FINAL, payload={"text": text})))
 
     def _on_assistant_partial(text: str) -> None:
         nonlocal tts_text_buffer, tts_partial_seen_since_final
         if text:
+            if turn_timer is not None and "first_partial" not in turn_timer._stamps:
+                turn_timer.stamp("first_partial")
             echo_filter.record_assistant_text(text)
             logger.info("COPILOT_PARTIAL: %s", text)
             if not settings.tts_speak_partials:
@@ -186,6 +192,9 @@ async def _run() -> None:
                     tts_queue.put_nowait(segment)
                 except asyncio.QueueFull:
                     logger.debug("TTS queue full; dropping final chunk")
+        if turn_timer is not None:
+            turn_timer.stamp("assistant_final")
+            turn_timer.log_summary()
 
     async def _tts_loop() -> None:
         while True:
@@ -195,6 +204,8 @@ async def _run() -> None:
                 if not cleaned:
                     continue
                 logger.info("TTS_OUTBOUND_CHUNK: %s", cleaned)
+                if turn_timer is not None and "first_tts" not in turn_timer._stamps:
+                    turn_timer.stamp("first_tts")
                 speech_gate.block()
                 echo_filter.record_assistant_text(cleaned)
                 try:
@@ -240,7 +251,9 @@ async def _run() -> None:
     tts_task = asyncio.create_task(_tts_loop())
 
     async def on_wake() -> None:
-        nonlocal first_wake
+        nonlocal first_wake, turn_timer
+        turn_timer = TurnTimer()
+        turn_timer.stamp("wake")
         await session_pool.activate()
         wake_sounds_dir = choose_wake_sounds_dir(
             first_wake=first_wake,
@@ -252,6 +265,7 @@ async def _run() -> None:
         speech_gate.block()
         echo_filter.record_assistant_text("yes")
         await playback.play_pcm(wake_audio)
+        turn_timer.stamp("ready")
 
     orchestrator = Orchestrator(bus, on_wake=on_wake, copilot_bridge=copilot)
     orchestrator.set_listening_timeout(settings.listening_timeout_ms)
