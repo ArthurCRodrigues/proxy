@@ -70,7 +70,7 @@ No browser tabs. No copy-paste. No keyboard. Just your voice and your code.
 - A [Vosk model](https://alphacephei.com/vosk/models) for wake word detection
 
 ```bash
-git clone https://github.com/your-org/proxy.git
+git clone https://github.com/ArthurCRodrigues/proxy.git
 cd proxy
 pip install -e ".[dev]"
 proxy init                     # guided setup: downloads model, configures API keys

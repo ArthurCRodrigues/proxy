@@ -5,7 +5,7 @@ Thanks for your interest in contributing. Here's how to get started.
 ## Setup
 
 ```bash
-git clone https://github.com/your-org/proxy.git
+git clone https://github.com/ArthurCRodrigues/proxy.git
 cd proxy
 python -m venv .venv
 source .venv/bin/activate
