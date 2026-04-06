@@ -25,6 +25,7 @@ Every millisecond of latency matters in a voice product.
 Voice UX goes beyond just speaking and listening.
 
 - **Stopword refinement** — Configurable interrupt behavior, optional confirmation sounds, cooldown tuning to prevent false triggers from TTS output.
+- **Voice status check** — Say "what's happening?" during long Copilot silences to hear a spoken summary of recent activity (files read, tools used, current thought) without interrupting the ongoing work.
 - **Voice commands** — Built-in commands beyond prompts: "read that again", "save that to a file", "run that command", "start new session."
 - **Multi-turn terminal UI** — A clean terminal display showing conversation history, current state, and Copilot activity (tool calls, thoughts) alongside the voice interaction.
 
