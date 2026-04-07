@@ -5,7 +5,7 @@ import asyncio
 import re
 
 from proxy.audio.assets import choose_wake_sounds_dir, load_random_wake_audio
-from proxy.audio.io import AudioIO
+from proxy.audio.io import AudioIO, list_input_devices
 from proxy.audio.playback import PlaybackEngine
 from proxy.audio.wake_vad import WakeVadEngine
 from proxy.copilot.bridge import CopilotBridge
@@ -89,7 +89,7 @@ async def _run() -> None:
     speech_gate = SpeechGate(hold_ms=settings.stt_gate_hold_ms)
     echo_filter = EchoFilter(similarity_threshold=settings.stt_deecho_similarity_threshold)
     orchestrator: Orchestrator | None = None
-    tts_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=64)
+    tts_queue: asyncio.Queue[tuple[str | None, str | None, bool]] = asyncio.Queue(maxsize=64)
     tts_task: asyncio.Task[None] | None = None
     tts_text_buffer = ""
     tts_partial_seen_since_final = False
@@ -145,7 +145,7 @@ async def _run() -> None:
             turn_timer.stamp("user_final")
         asyncio.create_task(bus.publish(Event(type=EventType.USER_FINAL, payload={"text": text})))
 
-    def _on_assistant_partial(text: str) -> None:
+    def _on_assistant_partial(text: str, turn_id: str | None) -> None:
         nonlocal tts_text_buffer, tts_partial_seen_since_final
         if text:
             if turn_timer is not None and "first_partial" not in turn_timer._stamps:
@@ -164,11 +164,11 @@ async def _run() -> None:
             )
             for segment in segments:
                 try:
-                    tts_queue.put_nowait(segment)
+                    tts_queue.put_nowait((segment, turn_id, False))
                 except asyncio.QueueFull:
                     logger.debug("TTS queue full; dropping partial chunk")
 
-    def _on_assistant_final(text: str) -> None:
+    def _on_assistant_final(text: str, turn_id: str | None) -> None:
         nonlocal tts_text_buffer, tts_partial_seen_since_final
         if text:
             echo_filter.record_assistant_text(text)
@@ -189,18 +189,29 @@ async def _run() -> None:
             tts_partial_seen_since_final = False
             for segment in segments:
                 try:
-                    tts_queue.put_nowait(segment)
+                    tts_queue.put_nowait((segment, turn_id, False))
                 except asyncio.QueueFull:
                     logger.debug("TTS queue full; dropping final chunk")
+        tts_partial_seen_since_final = False
+        # Mark turn completion so state can return to IDLE only after playback has actually drained.
+        asyncio.create_task(tts_queue.put((None, turn_id, True)))
         if turn_timer is not None:
             turn_timer.stamp("assistant_final")
             turn_timer.log_summary()
 
     async def _tts_loop() -> None:
         while True:
-            text = await tts_queue.get()
+            text, turn_id, turn_done = await tts_queue.get()
             try:
-                cleaned = text.strip()
+                if turn_done:
+                    await bus.publish(
+                        Event(
+                            type=EventType.ASSISTANT_AUDIO_DONE,
+                            turn_id=turn_id,
+                        )
+                    )
+                    continue
+                cleaned = (text or "").strip()
                 if not cleaned:
                     continue
                 logger.info("TTS_OUTBOUND_CHUNK: %s", cleaned)
@@ -233,7 +244,7 @@ async def _run() -> None:
             logger.info("NARRATION: %s", text)
             echo_filter.record_assistant_text(text)
             try:
-                tts_queue.put_nowait(text)
+                tts_queue.put_nowait((text, None, False))
             except asyncio.QueueFull:
                 logger.debug("TTS queue full; dropping narration")
 
@@ -343,7 +354,7 @@ def _install_service() -> None:
     import sys
     from pathlib import Path
 
-    project_dir = Path(__file__).resolve().parent.parent
+    project_dir = Path(__file__).resolve().parents[2]
     python = sys.executable
     service_dir = Path.home() / ".config" / "systemd" / "user"
     service_file = service_dir / "proxy.service"
@@ -356,6 +367,7 @@ def _install_service() -> None:
         f"[Service]\n"
         f"Type=simple\n"
         f"WorkingDirectory={project_dir}\n"
+        f"Environment=PYTHONPATH={project_dir / 'src'}\n"
         f"ExecStart={python} -m proxy.main\n"
         f"Restart=on-failure\n"
         f"RestartSec=5\n\n"
@@ -382,7 +394,7 @@ def _init() -> None:
     from io import BytesIO
     from pathlib import Path
 
-    project_dir = Path(__file__).resolve().parent.parent
+    project_dir = Path(__file__).resolve().parents[2]
     env_file = project_dir / ".env"
     env_example = project_dir / ".env.example"
     vosk_dir = project_dir / "assets" / "models" / "vosk-model-small-en-us-0.15"
@@ -508,17 +520,38 @@ def _write_env(
     print(f"      Wrote {env_file}")
 
 
+def _devices() -> None:
+    try:
+        devices = list_input_devices()
+    except RuntimeError as exc:
+        print(f"Unable to list input devices: {exc}")
+        return
+
+    if not devices:
+        print("No audio input devices found.")
+        return
+
+    idx_width = max(len("INDEX"), max(len(str(idx)) for idx, _, _ in devices))
+    rate_width = max(len("RATE"), max(len(str(rate)) for _, _, rate in devices))
+    print(f"{'INDEX':>{idx_width}}  {'RATE':>{rate_width}}  NAME")
+    for idx, name, sample_rate in devices:
+        print(f"{idx:>{idx_width}}  {sample_rate:>{rate_width}}  {name}")
+
+
 def cli() -> None:
     parser = argparse.ArgumentParser(description="Proxy voice assistant")
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("init", help="Guided first-time setup")
     sub.add_parser("setup", help="Install Proxy as a startup service (Linux)")
+    sub.add_parser("devices", help="List available audio input devices")
     args = parser.parse_args()
 
     if args.command == "init":
         _init()
     elif args.command == "setup":
         _install_service()
+    elif args.command == "devices":
+        _devices()
     else:
         asyncio.run(_run())
 

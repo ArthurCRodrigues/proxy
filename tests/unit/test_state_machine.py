@@ -26,7 +26,10 @@ def test_happy_path_transitions() -> None:
     ctx = apply_event(ctx, Event(type=EventType.ASSISTANT_PARTIAL))
     assert ctx.state == AssistantState.SPEAKING
 
-    ctx = apply_event(ctx, Event(type=EventType.ASSISTANT_FINAL))
+    ctx = apply_event(ctx, Event(type=EventType.ASSISTANT_FINAL, payload={"text": "done"}))
+    assert ctx.state == AssistantState.SPEAKING
+
+    ctx = apply_event(ctx, Event(type=EventType.ASSISTANT_AUDIO_DONE))
     assert ctx.state == AssistantState.IDLE
     assert ctx.session_id is None
 
@@ -86,6 +89,22 @@ def test_cancel_returns_to_idle_without_thinking() -> None:
 def test_assistant_final_returns_to_idle() -> None:
     ctx = OrchestratorContext(state=AssistantState.THINKING, session_id="s", turn_id="t")
     out = apply_event(ctx, Event(type=EventType.ASSISTANT_FINAL))
+    assert out.state == AssistantState.IDLE
+    assert out.session_id is None
+    assert out.turn_id is None
+
+
+def test_assistant_final_with_text_from_thinking_enters_speaking() -> None:
+    ctx = OrchestratorContext(state=AssistantState.THINKING, session_id="s", turn_id="t")
+    out = apply_event(ctx, Event(type=EventType.ASSISTANT_FINAL, payload={"text": "hello"}))
+    assert out.state == AssistantState.SPEAKING
+    assert out.session_id == "s"
+    assert out.turn_id == "t"
+
+
+def test_assistant_audio_done_returns_to_idle() -> None:
+    ctx = OrchestratorContext(state=AssistantState.SPEAKING, session_id="s", turn_id="t")
+    out = apply_event(ctx, Event(type=EventType.ASSISTANT_AUDIO_DONE))
     assert out.state == AssistantState.IDLE
     assert out.session_id is None
     assert out.turn_id is None

@@ -24,7 +24,7 @@ def _parse_csv(value: str) -> tuple[str, ...]:
 
 
 def _default_copilot_instructions_path() -> str:
-    return str(Path(__file__).resolve().parent.parent / "instructions.md")
+    return str(Path(__file__).resolve().parents[2] / "instructions.md")
 
 
 @dataclass(frozen=True)

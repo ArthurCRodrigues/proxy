@@ -73,8 +73,10 @@ No browser tabs. No copy-paste. No keyboard. Just your voice and your code.
 git clone https://github.com/ArthurCRodrigues/proxy.git
 cd proxy
 pip install -e ".[dev]"
+proxy devices                  # list available input devices (index, name, sample rate)
 proxy init                     # guided setup: downloads model, configures API keys
-proxy                          # say "Proxy" and start talking
+proxy                          # installed CLI command
+./proxy                        # repo-local launcher from the project root
 ```
 
 ### Run at startup (Linux)

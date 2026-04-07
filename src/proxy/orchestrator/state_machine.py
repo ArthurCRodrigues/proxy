@@ -21,6 +21,10 @@ def _new_id() -> str:
     return str(uuid4())
 
 
+def _event_has_text(event: Event) -> bool:
+    return bool(str(event.payload.get("text", "")).strip())
+
+
 def apply_event(ctx: OrchestratorContext, event: Event) -> OrchestratorContext:
     state = ctx.state
 
@@ -39,7 +43,7 @@ def apply_event(ctx: OrchestratorContext, event: Event) -> OrchestratorContext:
         if event.type == EventType.WAKE:
             return OrchestratorContext(
                 state=AssistantState.WAKE_DETECTED,
-                session_id=ctx.session_id,
+                session_id=ctx.session_id or _new_id(),
                 turn_id=None,
             )
         raise InvalidTransitionError(f"{state} cannot handle {event.type}")
@@ -70,6 +74,12 @@ def apply_event(ctx: OrchestratorContext, event: Event) -> OrchestratorContext:
 
     if state == AssistantState.THINKING:
         if event.type == EventType.ASSISTANT_FINAL:
+            if _event_has_text(event):
+                return OrchestratorContext(
+                    state=AssistantState.SPEAKING,
+                    session_id=ctx.session_id,
+                    turn_id=ctx.turn_id,
+                )
             return OrchestratorContext(
                 state=AssistantState.IDLE,
                 session_id=None,
@@ -93,6 +103,8 @@ def apply_event(ctx: OrchestratorContext, event: Event) -> OrchestratorContext:
         if event.type == EventType.ASSISTANT_PARTIAL:
             return ctx
         if event.type == EventType.ASSISTANT_FINAL:
+            return ctx
+        if event.type == EventType.ASSISTANT_AUDIO_DONE:
             return OrchestratorContext(
                 state=AssistantState.IDLE,
                 session_id=None,

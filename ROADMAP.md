@@ -27,6 +27,7 @@ Voice UX goes beyond just speaking and listening.
 - **Stopword refinement** — Configurable interrupt behavior, optional confirmation sounds, cooldown tuning to prevent false triggers from TTS output.
 - **Voice status check** — Say "what's happening?" during long Copilot silences to hear a spoken summary of recent activity (files read, tools used, current thought) without interrupting the ongoing work.
 - **Voice commands** — Built-in commands beyond prompts: "read that again", "save that to a file", "run that command", "start new session."
+- **Voice logs command** — After wake word detection, saying "show logs" or "logs" opens a terminal window streaming Proxy process logs for live debugging.
 - **Multi-turn terminal UI** — A clean terminal display showing conversation history, current state, and Copilot activity (tool calls, thoughts) alongside the voice interaction.
 
 ## Accessibility and reach
@@ -41,6 +42,5 @@ Proxy should work for everyone, everywhere.
 
 Making it easy to extend and contribute.
 
-- **`proxy devices`** — List available audio input devices with their index, name, and sample rate so users can easily configure `PROXY_AUDIO_INPUT_DEVICE`.
 - **Plugin system** — A clean interface for registering custom STT, TTS, and agent providers without modifying core code.
 - **Latency benchmarking** — Extend the existing Copilot latency benchmark to cover the full pipeline: wake detection, STT, agent TTFB, TTS, and time-to-first-audio.

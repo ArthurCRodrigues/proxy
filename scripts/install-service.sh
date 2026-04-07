@@ -22,6 +22,7 @@ After=network.target sound.target
 [Service]
 Type=simple
 WorkingDirectory=$PROJECT_DIR
+Environment=PYTHONPATH=$PROJECT_DIR/src
 ExecStart=$PYTHON -m proxy.main
 Restart=on-failure
 RestartSec=5
