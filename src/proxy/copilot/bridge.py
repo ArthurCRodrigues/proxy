@@ -39,6 +39,8 @@ class CopilotBridge:
         on_assistant_partial: Callable[[str, str | None], None] | None = None,
         on_assistant_final: Callable[[str, str | None], None] | None = None,
         on_narration: Callable[[str], None] | None = None,
+        persona: str = "",
+        vanguard: "LocalModelClient | None" = None,
     ) -> None:
         self._event_bus = event_bus
         self._command = command
@@ -61,6 +63,10 @@ class CopilotBridge:
         self._on_assistant_final = on_assistant_final
         self._on_narration = on_narration
         self._last_thought = ""
+        self._vanguard = vanguard
+        self._persona = persona
+        self._thought_buffer: list[str] = []
+        self._thought_flush_task: asyncio.Task[None] | None = None
 
     async def prewarm_session(self) -> CopilotSessionHandle:
         session_id = await self._acp_new_session()
@@ -91,6 +97,9 @@ class CopilotBridge:
             except TimeoutError:
                 await self._cancel_bootstrap_task()
         include_bootstrap = session.session_id not in self._bootstrapped_sessions
+        if include_bootstrap and self._bootstrap_task is not None:
+            # Bootstrap is in flight — it will handle instructions. Don't duplicate.
+            include_bootstrap = False
         if self._active_task is not None and not self._active_task.done():
             await self._cancel_active_task()
             if self._active_session is not None:
@@ -438,11 +447,17 @@ class CopilotBridge:
             if text and text != self._last_thought:
                 self._last_thought = text
                 self._logger.info("COPILOT_THOUGHT: %s", text)
-                self._emit_narration(text)
+                if self._vanguard is not None:
+                    self._thought_buffer.append(text)
+                    self._schedule_thought_flush()
+                else:
+                    self._emit_narration(text)
         elif session_update == "tool_call":
             title = str(update.get("title", ""))
             status = str(update.get("status", ""))
             self._logger.info("COPILOT_TOOL_CALL: %s [%s]", title, status)
+            if self._vanguard is not None and status == "pending" and title:
+                asyncio.create_task(self._vanguard_tool_narration(title))
         elif session_update == "tool_call_update":
             tool_id = str(update.get("toolCallId", ""))[:12]
             status = str(update.get("status", ""))
@@ -455,8 +470,31 @@ class CopilotBridge:
             )
 
     def _emit_narration(self, text: str) -> None:
-        if self._on_narration is not None:
+        if self._on_narration is not None and text:
             self._on_narration(text)
+
+    async def _vanguard_tool_narration(self, title: str) -> None:
+        assert self._vanguard is not None
+        narration = await self._vanguard.generate_tool_narration(title)
+        if narration:
+            self._logger.info("VANGUARD_TOOL: %s", narration)
+            self._emit_narration(narration)
+
+    def _schedule_thought_flush(self) -> None:
+        if self._thought_flush_task is not None and not self._thought_flush_task.done():
+            return
+        self._thought_flush_task = asyncio.create_task(self._flush_thought_buffer())
+
+    async def _flush_thought_buffer(self) -> None:
+        await asyncio.sleep(2.5)
+        thoughts = self._thought_buffer
+        self._thought_buffer = []
+        if not thoughts or self._vanguard is None:
+            return
+        summary = await self._vanguard.generate_thought_summary(thoughts)
+        if summary:
+            self._logger.info("VANGUARD_THOUGHT: %s", summary)
+            self._emit_narration(summary)
 
     async def _stop_acp(self) -> None:
         if self._acp_reader_task is not None and not self._acp_reader_task.done():
@@ -478,8 +516,9 @@ class CopilotBridge:
     _DEFAULT_INSTRUCTIONS = (
         "You are a voice assistant. The user is speaking to you through speech-to-text, "
         "and your responses will be read aloud via text-to-speech. "
-        "Respond using plain, conversational language. Keep answers concise and natural for spoken delivery. "
-        "Avoid markdown, code fences, bullet lists, or any visual formatting."
+        "Respond using plain, conversational language. Keep answers concise — aim for 2-3 sentences unless the user asks for detail. "
+        "Avoid markdown, code fences, bullet lists, or any visual formatting. "
+        "Do not read out file contents or code unless specifically asked. Summarize findings instead of listing everything."
     )
 
     def _with_bootstrap_instructions(self, prompt: str, include_bootstrap: bool) -> str:
@@ -490,13 +529,17 @@ class CopilotBridge:
         if path.exists():
             content = path.read_text(encoding="utf-8").strip()
             if content:
-                return (
-                    f"System bootstrap instructions:\\n{content}\\n\\n"
-                    f"User request (verbatim STT):\\n{prompt}"
-                )
+                instructions = content
+            else:
+                instructions = self._DEFAULT_INSTRUCTIONS
+        else:
+            self._logger.info("No instructions file found at %s; using default voice instructions", path)
+            instructions = self._DEFAULT_INSTRUCTIONS
 
-        self._logger.info("No instructions file found at %s; using default voice instructions", path)
+        if self._persona:
+            instructions = f"{instructions}\n\nPersona/tone: {self._persona}"
+
         return (
-            f"System bootstrap instructions:\\n{self._DEFAULT_INSTRUCTIONS}\\n\\n"
+            f"System bootstrap instructions:\\n{instructions}\\n\\n"
             f"User request (verbatim STT):\\n{prompt}"
         )
