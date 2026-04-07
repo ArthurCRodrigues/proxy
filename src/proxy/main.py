@@ -258,6 +258,7 @@ async def _run() -> None:
             timeout_s=settings.vanguard_timeout_s,
         )
         logger.info("Vanguard mode enabled (model=%s)", settings.vanguard_model)
+        asyncio.create_task(vanguard.generate_latency_filler("warmup"))
 
     copilot = CopilotBridge(
         event_bus=bus,
