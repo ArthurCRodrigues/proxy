@@ -538,11 +538,23 @@ def _devices() -> None:
         print(f"{idx:>{idx_width}}  {sample_rate:>{rate_width}}  {name}")
 
 
+def _service_cmd(*args: str) -> None:
+    import subprocess
+    try:
+        subprocess.run(["systemctl", "--user", *args, "proxy.service"], check=True)
+    except FileNotFoundError:
+        print("Error: systemctl not found. This command requires Linux with systemd.")
+    except subprocess.CalledProcessError as exc:
+        print(f"Error: systemctl exited with code {exc.returncode}")
+
+
 def cli() -> None:
     parser = argparse.ArgumentParser(description="Proxy voice assistant")
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("init", help="Guided first-time setup")
     sub.add_parser("setup", help="Install Proxy as a startup service (Linux)")
+    sub.add_parser("stop", help="Stop the Proxy background service")
+    sub.add_parser("restart", help="Restart the Proxy background service")
     sub.add_parser("devices", help="List available audio input devices")
     args = parser.parse_args()
 
@@ -550,6 +562,10 @@ def cli() -> None:
         _init()
     elif args.command == "setup":
         _install_service()
+    elif args.command == "stop":
+        _service_cmd("stop")
+    elif args.command == "restart":
+        _service_cmd("restart")
     elif args.command == "devices":
         _devices()
     else:
