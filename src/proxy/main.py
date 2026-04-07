@@ -248,6 +248,17 @@ async def _run() -> None:
             except asyncio.QueueFull:
                 logger.debug("TTS queue full; dropping narration")
 
+    # Vanguard mode (local model narration)
+    vanguard = None
+    if settings.vanguard_enabled:
+        from proxy.local_model.client import LocalModelClient
+        vanguard = LocalModelClient(
+            base_url=settings.vanguard_base_url,
+            model=settings.vanguard_model,
+            timeout_s=settings.vanguard_timeout_s,
+        )
+        logger.info("Vanguard mode enabled (model=%s)", settings.vanguard_model)
+
     copilot = CopilotBridge(
         event_bus=bus,
         command=settings.copilot_command,
@@ -257,6 +268,8 @@ async def _run() -> None:
         on_assistant_partial=_on_assistant_partial,
         on_assistant_final=_on_assistant_final,
         on_narration=_on_narration,
+        persona=settings.copilot_persona,
+        vanguard=vanguard,
     )
     session_pool = SessionPool(bridge=copilot)
     tts_task = asyncio.create_task(_tts_loop())
@@ -293,7 +306,7 @@ async def _run() -> None:
             except asyncio.QueueEmpty:
                 break
 
-    orchestrator = Orchestrator(bus, on_wake=on_wake, copilot_bridge=copilot, on_interrupt=on_interrupt)
+    orchestrator = Orchestrator(bus, on_wake=on_wake, copilot_bridge=copilot, on_interrupt=on_interrupt, vanguard=vanguard)
     orchestrator.set_listening_timeout(settings.listening_timeout_ms)
     runner = asyncio.create_task(orchestrator.run())
 
