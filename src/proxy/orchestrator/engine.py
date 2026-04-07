@@ -21,6 +21,7 @@ class Orchestrator:
         on_wake: Callable[[], Awaitable[None]] | None = None,
         copilot_bridge: CopilotBridge | None = None,
         on_interrupt: Callable[[], Awaitable[None]] | None = None,
+        vanguard: "LocalModelClient | None" = None,
     ) -> None:
         self._event_bus = event_bus
         self._ctx = OrchestratorContext()
@@ -29,6 +30,8 @@ class Orchestrator:
         self._on_wake = on_wake
         self._on_interrupt = on_interrupt
         self._copilot = copilot_bridge
+        self._vanguard = vanguard
+        self._filler_task: asyncio.Task[None] | None = None
         self._listening_timeout_task: asyncio.Task[None] | None = None
         self._listening_timeout_ms = 10_000
 
@@ -103,6 +106,10 @@ class Orchestrator:
         if event.type == EventType.USER_FINAL and self._copilot is not None:
             text = str(event.payload.get("text", "")).strip()
             if text:
+                if self._vanguard is not None:
+                    self._filler_task = asyncio.create_task(
+                        self._emit_latency_filler(text)
+                    )
                 await self._copilot.send_user_turn(text, turn_id=self._ctx.turn_id)
         if event.type == EventType.INTERRUPT:
             if self._on_interrupt is not None:
@@ -113,6 +120,30 @@ class Orchestrator:
             self._arm_listening_timeout()
         elif previous == AssistantState.LISTENING:
             self._cancel_listening_timeout()
+        if new == AssistantState.SPEAKING:
+            self._cancel_filler()
+
+    def _cancel_filler(self) -> None:
+        if self._filler_task is not None and not self._filler_task.done():
+            self._filler_task.cancel()
+        self._filler_task = None
+
+    async def _emit_latency_filler(self, user_text: str) -> None:
+        assert self._vanguard is not None
+        try:
+            filler = await self._vanguard.generate_latency_filler(user_text)
+            if filler and self._ctx.state == AssistantState.THINKING:
+                await self._event_bus.publish(
+                    Event(
+                        type=EventType.ASSISTANT_PARTIAL,
+                        session_id=self._ctx.session_id,
+                        turn_id=self._ctx.turn_id,
+                        payload={"text": filler},
+                    )
+                )
+                self._logger.info("VANGUARD_FILLER: %s", filler)
+        except asyncio.CancelledError:
+            pass
 
     def _arm_listening_timeout(self) -> None:
         self._cancel_listening_timeout()
