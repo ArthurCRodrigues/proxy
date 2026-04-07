@@ -548,6 +548,28 @@ def _service_cmd(*args: str) -> None:
         print(f"Error: systemctl exited with code {exc.returncode}")
 
 
+def _service_logs() -> None:
+    import subprocess
+    try:
+        subprocess.run(["journalctl", "--user", "-u", "proxy", "-f"], check=True)
+    except FileNotFoundError:
+        print("Error: journalctl not found. This command requires Linux with systemd.")
+    except KeyboardInterrupt:
+        pass
+
+
+def _is_service_active() -> bool:
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", "is-active", "proxy.service"],
+            capture_output=True, text=True,
+        )
+        return result.stdout.strip() == "active"
+    except FileNotFoundError:
+        return False
+
+
 def cli() -> None:
     parser = argparse.ArgumentParser(description="Proxy voice assistant")
     sub = parser.add_subparsers(dest="command")
@@ -555,6 +577,7 @@ def cli() -> None:
     sub.add_parser("setup", help="Install Proxy as a startup service (Linux)")
     sub.add_parser("stop", help="Stop the Proxy background service")
     sub.add_parser("restart", help="Restart the Proxy background service")
+    sub.add_parser("logs", help="Follow logs from the Proxy background service")
     sub.add_parser("devices", help="List available audio input devices")
     args = parser.parse_args()
 
@@ -566,10 +589,18 @@ def cli() -> None:
         _service_cmd("stop")
     elif args.command == "restart":
         _service_cmd("restart")
+    elif args.command == "logs":
+        _service_logs()
     elif args.command == "devices":
         _devices()
     else:
-        asyncio.run(_run())
+        if _is_service_active():
+            print("Proxy is already running as a background service.")
+            print("  Logs:    proxy logs")
+            print("  Restart: proxy restart")
+            print("  Stop:    proxy stop")
+        else:
+            asyncio.run(_run())
 
 
 if __name__ == "__main__":
