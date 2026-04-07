@@ -32,13 +32,13 @@ class Settings:
     deepgram_api_key: str
     elevenlabs_api_key: str
     elevenlabs_voice_id: str
-    elevenlabs_model_id: str = "eleven_multilingual_v2"
-    elevenlabs_output_format: str = "pcm_22050"
+    elevenlabs_model_id: str = "eleven_v3"
+    elevenlabs_output_format: str = "pcm_44100"
     elevenlabs_fallback_output_formats: tuple[str, ...] = ("wav_22050",)
-    elevenlabs_stability: float = 0.45
+    elevenlabs_stability: float = 0.55
     elevenlabs_similarity_boost: float = 0.85
-    elevenlabs_style: float = 0.25
-    elevenlabs_speed: float = 0.95
+    elevenlabs_style: float = 0.0
+    elevenlabs_speed: float = 1.0
     elevenlabs_use_speaker_boost: bool = True
     log_level: str = "INFO"
     log_debug_modules: str = ""
@@ -100,17 +100,17 @@ class Settings:
             deepgram_api_key=os.getenv("DEEPGRAM_API_KEY", ""),
             elevenlabs_api_key=os.getenv("ELEVENLABS_API_KEY", ""),
             elevenlabs_voice_id=os.getenv("ELEVENLABS_VOICE_ID", ""),
-            elevenlabs_model_id=os.getenv("PROXY_ELEVENLABS_MODEL_ID", "eleven_multilingual_v2"),
-            elevenlabs_output_format=os.getenv("PROXY_ELEVENLABS_OUTPUT_FORMAT", "pcm_22050"),
+            elevenlabs_model_id=os.getenv("PROXY_ELEVENLABS_MODEL_ID", "eleven_v3"),
+            elevenlabs_output_format=os.getenv("PROXY_ELEVENLABS_OUTPUT_FORMAT", "pcm_44100"),
             elevenlabs_fallback_output_formats=_parse_csv(
                 os.getenv("PROXY_ELEVENLABS_FALLBACK_OUTPUT_FORMATS", "wav_22050")
             ),
-            elevenlabs_stability=float(os.getenv("PROXY_ELEVENLABS_STABILITY", "0.45")),
+            elevenlabs_stability=float(os.getenv("PROXY_ELEVENLABS_STABILITY", "0.55")),
             elevenlabs_similarity_boost=float(
                 os.getenv("PROXY_ELEVENLABS_SIMILARITY_BOOST", "0.85")
             ),
-            elevenlabs_style=float(os.getenv("PROXY_ELEVENLABS_STYLE", "0.25")),
-            elevenlabs_speed=float(os.getenv("PROXY_ELEVENLABS_SPEED", "0.95")),
+            elevenlabs_style=float(os.getenv("PROXY_ELEVENLABS_STYLE", "0.0")),
+            elevenlabs_speed=float(os.getenv("PROXY_ELEVENLABS_SPEED", "1.0")),
             elevenlabs_use_speaker_boost=os.getenv("PROXY_ELEVENLABS_USE_SPEAKER_BOOST", "1")
             in ("1", "true", "True"),
             log_level=os.getenv("PROXY_LOG_LEVEL", "INFO"),
