@@ -161,6 +161,37 @@ Proxy plays a short audio clip when the wake word is detected. You need to provi
 
 Place one or more `.wav` files (PCM 16-bit) in each directory. Proxy picks one at random each time.
 
+### Vanguard mode (optional)
+
+Vanguard uses a local model to fill Copilot's silence with context-aware speech. When enabled, Proxy acknowledges your prompt immediately ("Hold on, let me check the autograder") while Copilot boots up, and you can ask "what's happening?" anytime to hear a summary of what Copilot is doing.
+
+Requires [Ollama](https://ollama.com) running locally:
+
+```bash
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Pull the default model
+ollama pull llama3.2:3b
+
+# Start the server (runs on port 11434)
+ollama serve
+```
+
+Then enable it in your `.env`:
+
+```env
+PROXY_VANGUARD_ENABLED=1
+PROXY_VANGUARD_MODEL=llama3.2:3b
+PROXY_VANGUARD_CONTEXT=Projects: my-api, my-frontend. Languages: Python, TypeScript.
+```
+
+`PROXY_VANGUARD_CONTEXT` tells the local model about your projects and tools so it can reference them by name. Without it, a filler might say "Let me check that repository." With it, you get "Hold on, let me look at my-api." Keep it short — just project names, languages, and key terms.
+
+Or run `proxy init` — it will offer to set up Vanguard as part of the guided setup.
+
+Vanguard is completely optional. When disabled, everything works exactly as before.
+
 ---
 
 ## What's Next

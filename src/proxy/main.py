@@ -504,6 +504,38 @@ def _init() -> None:
         print("      ✗ copilot not found in PATH")
         print("      Install: https://docs.github.com/en/copilot/github-copilot-in-the-cli")
 
+    # Optional: Vanguard mode
+    vanguard_enabled = False
+    print()
+    vanguard = input("Enable Vanguard mode? (local model for latency fillers, requires Ollama) [y/N] ").strip().lower()
+    if vanguard in ("y", "yes"):
+        if shutil.which("ollama"):
+            print("      ✓ ollama found")
+            # Check if model is pulled
+            try:
+                result = subprocess.run(["ollama", "list"], capture_output=True, text=True)
+                if "llama3.2:3b" not in result.stdout:
+                    pull = input("      Model llama3.2:3b not found. Pull now? (~2GB) [Y/n] ").strip().lower()
+                    if pull in ("", "y", "yes"):
+                        print("      Pulling llama3.2:3b...")
+                        subprocess.run(["ollama", "pull", "llama3.2:3b"], check=True)
+                        print("      ✓ model pulled")
+                else:
+                    print("      ✓ llama3.2:3b model found")
+                vanguard_enabled = True
+            except Exception as exc:
+                print(f"      ✗ error checking model: {exc}")
+        else:
+            print("      ✗ ollama not found")
+            print("      Install: curl -fsSL https://ollama.com/install.sh | sh")
+            print("      Then run: ollama pull llama3.2:3b && ollama serve")
+
+    vanguard_context = ""
+    if vanguard_enabled:
+        print("      Context helps the local model reference your projects by name.")
+        print("      Example: 'Projects: my-api, my-frontend. Languages: Python, TypeScript.'")
+        vanguard_context = input("      Your context: ").strip()
+
     # Write .env
     print()
     if env_file.exists():
@@ -511,9 +543,9 @@ def _init() -> None:
         if overwrite not in ("y", "yes"):
             print("Keeping existing .env")
         else:
-            _write_env(env_file, env_example, deepgram_key, elevenlabs_key, elevenlabs_voice)
+            _write_env(env_file, env_example, deepgram_key, elevenlabs_key, elevenlabs_voice, vanguard_enabled, vanguard_context)
     else:
-        _write_env(env_file, env_example, deepgram_key, elevenlabs_key, elevenlabs_voice)
+        _write_env(env_file, env_example, deepgram_key, elevenlabs_key, elevenlabs_voice, vanguard_enabled, vanguard_context)
 
     # Optional: startup service
     print()
@@ -533,6 +565,8 @@ def _write_env(
     deepgram_key: str,
     elevenlabs_key: str,
     elevenlabs_voice: str,
+    vanguard_enabled: bool = False,
+    vanguard_context: str = "",
 ) -> None:
     from pathlib import Path
 
@@ -545,6 +579,7 @@ def _write_env(
         "DEEPGRAM_API_KEY=": f"DEEPGRAM_API_KEY={deepgram_key}",
         "ELEVENLABS_API_KEY=": f"ELEVENLABS_API_KEY={elevenlabs_key}",
         "ELEVENLABS_VOICE_ID=": f"ELEVENLABS_VOICE_ID={elevenlabs_voice}",
+        "PROXY_VANGUARD_ENABLED=0": f"PROXY_VANGUARD_ENABLED={'1' if vanguard_enabled else '0'}",
     }
 
     lines = content.splitlines()
@@ -552,12 +587,15 @@ def _write_env(
     for line in lines:
         replaced = False
         for prefix, replacement in replacements.items():
-            if line.strip().startswith(prefix) and line.strip() == prefix:
+            if line.strip() == prefix:
                 result.append(replacement)
                 replaced = True
                 break
         if not replaced:
             result.append(line)
+
+    if vanguard_enabled and vanguard_context:
+        result.append(f"PROXY_VANGUARD_CONTEXT={vanguard_context}")
 
     env_file.write_text("\n".join(result) + "\n", encoding="utf-8")
     print(f"      Wrote {env_file}")
