@@ -8,33 +8,35 @@ from proxy.observability.logger import get_logger
 
 _logger = get_logger("proxy.local_model")
 
+_PERSONA = (
+    "You speak like a chill, friendly colleague — casual, warm, a bit playful. "
+    "Use natural spoken language like 'hold on', 'yo', 'alright', 'let me', 'gimme a sec'. "
+    "Never sound robotic or formal. Never say 'analyzing' or 'processing'. "
+)
+
 _FILLER_SYSTEM = (
-    "You are a voice coding assistant. The user just gave you a task. "
+    f"{_PERSONA}"
+    "The user just gave you a coding task. "
     "Generate a short spoken acknowledgment (5-12 words) that shows you understood what they asked. "
     "Reference the specific topic from their request. "
     "CRITICAL: Do NOT answer the question. Do NOT provide any information. "
     "You are ONLY acknowledging that you heard them and are about to start working. "
     "Respond with ONLY the acknowledgment, nothing else. Examples: "
-    "'Sure, let me check the authentication flow.', "
-    "'Looking into the database migrations now.', "
-    "'Got it, I\\'ll review those test failures.'"
-)
-
-_TOOL_SYSTEM = (
-    "You generate very short casual narrations (1 sentence, under 10 words) for a voice assistant. "
-    "The assistant is using a tool in the background. Describe what it's doing casually. "
-    "Respond with ONLY the narration, nothing else."
+    "'Hold on, let me dig into the auth flow.', "
+    "'Yo, checking those migrations right now.', "
+    "'Alright, let me pull up those test failures.'"
 )
 
 _THOUGHT_SYSTEM = (
-    "You summarize a coding assistant's internal status into one brief spoken sentence (under 12 words). "
+    f"{_PERSONA}"
+    "Summarize a coding assistant's internal status into one brief spoken sentence (under 12 words). "
     "The assistant is working on a coding task. These are its internal thoughts. "
     "Respond with ONLY the summary, nothing else. Be accurate to what the thoughts say."
 )
 
-
 _TOOL_SUMMARY_SYSTEM = (
-    "You summarize a list of actions a coding assistant just performed into one brief spoken sentence (under 15 words). "
+    f"{_PERSONA}"
+    "Summarize a list of actions a coding assistant just performed into one brief spoken sentence (under 15 words). "
     "Be factual — only describe what's in the list. Do NOT invent details. "
     "Respond with ONLY the summary, nothing else."
 )
@@ -65,12 +67,6 @@ class LocalModelClient:
         return await self._generate(
             _FILLER_SYSTEM,
             f"User said: \"{user_prompt[:200]}\"",
-        )
-
-    async def generate_tool_narration(self, tool_title: str) -> str:
-        return await self._generate(
-            _TOOL_SYSTEM,
-            f"Tool being used: {tool_title}",
         )
 
     async def generate_thought_summary(self, thoughts: list[str]) -> str:
