@@ -456,8 +456,6 @@ class CopilotBridge:
             title = str(update.get("title", ""))
             status = str(update.get("status", ""))
             self._logger.info("COPILOT_TOOL_CALL: %s [%s]", title, status)
-            if self._vanguard is not None and status == "pending" and title:
-                asyncio.create_task(self._vanguard_tool_narration(title))
         elif session_update == "tool_call_update":
             tool_id = str(update.get("toolCallId", ""))[:12]
             status = str(update.get("status", ""))

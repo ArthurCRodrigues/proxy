@@ -9,9 +9,13 @@ from proxy.observability.logger import get_logger
 _logger = get_logger("proxy.local_model")
 
 _FILLER_SYSTEM = (
-    "You generate very short spoken acknowledgments (3-8 words) for a voice assistant. "
-    "The user just asked something and the assistant is about to work on it. "
-    "Respond with ONLY the filler phrase, nothing else. Be casual and natural."
+    "You are a voice coding assistant. The user just gave you a task. "
+    "Generate a short spoken acknowledgment (5-12 words) that shows you understood what they asked. "
+    "Reference the specific topic from their request. "
+    "Respond with ONLY the acknowledgment, nothing else. Examples: "
+    "'Sure, let me check the authentication flow.', "
+    "'Looking into the database migrations now.', "
+    "'Got it, I\\'ll review those test failures.'"
 )
 
 _TOOL_SYSTEM = (
@@ -21,8 +25,9 @@ _TOOL_SYSTEM = (
 )
 
 _THOUGHT_SYSTEM = (
-    "You summarize internal thoughts into one brief spoken sentence (under 15 words) for a voice assistant. "
-    "Respond with ONLY the summary, nothing else."
+    "You summarize a coding assistant's internal status into one brief spoken sentence (under 12 words). "
+    "The assistant is working on a coding task. These are its internal thoughts. "
+    "Respond with ONLY the summary, nothing else. Be accurate to what the thoughts say."
 )
 
 
@@ -50,7 +55,7 @@ class LocalModelClient:
     async def generate_latency_filler(self, user_prompt: str) -> str:
         return await self._generate(
             _FILLER_SYSTEM,
-            f"User asked: {user_prompt[:100]}",
+            f"User said: \"{user_prompt[:200]}\"",
         )
 
     async def generate_tool_narration(self, tool_title: str) -> str:
