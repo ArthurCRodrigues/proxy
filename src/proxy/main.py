@@ -307,7 +307,7 @@ async def _run() -> None:
             except asyncio.QueueEmpty:
                 break
 
-    orchestrator = Orchestrator(bus, on_wake=on_wake, copilot_bridge=copilot, on_interrupt=on_interrupt, vanguard=vanguard)
+    orchestrator = Orchestrator(bus, on_wake=on_wake, copilot_bridge=copilot, on_interrupt=on_interrupt, on_narration=_on_narration, vanguard=vanguard)
     orchestrator.set_listening_timeout(settings.listening_timeout_ms)
     runner = asyncio.create_task(orchestrator.run())
 
