@@ -30,7 +30,7 @@ class LocalModelClient:
     def __init__(
         self,
         base_url: str = "http://localhost:11434",
-        model: str = "phi3:mini",
+        model: str = "llama3.2:3b",
         timeout_s: float = 2.0,
     ) -> None:
         self._base_url = base_url.rstrip("/")

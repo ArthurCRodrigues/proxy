@@ -84,7 +84,7 @@ class Settings:
     copilot_instructions_path: str = _default_copilot_instructions_path()
     copilot_persona: str = ""
     vanguard_enabled: bool = False
-    vanguard_model: str = "phi3:mini"
+    vanguard_model: str = "llama3.2:3b"
     vanguard_base_url: str = "http://localhost:11434"
     vanguard_timeout_s: float = 2.0
     tts_speak_partials: bool = True
@@ -177,7 +177,7 @@ class Settings:
             copilot_instructions_path=copilot_instructions_path,
             copilot_persona=os.getenv("PROXY_COPILOT_PERSONA", ""),
             vanguard_enabled=os.getenv("PROXY_VANGUARD_ENABLED", "0") in ("1", "true", "True"),
-            vanguard_model=os.getenv("PROXY_VANGUARD_MODEL", "phi3:mini"),
+            vanguard_model=os.getenv("PROXY_VANGUARD_MODEL", "llama3.2:3b"),
             vanguard_base_url=os.getenv("PROXY_VANGUARD_BASE_URL", "http://localhost:11434"),
             vanguard_timeout_s=float(os.getenv("PROXY_VANGUARD_TIMEOUT_S", "2.0")),
             tts_speak_partials=os.getenv("PROXY_TTS_SPEAK_PARTIALS", "1")
