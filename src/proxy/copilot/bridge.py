@@ -67,6 +67,8 @@ class CopilotBridge:
         self._persona = persona
         self._thought_buffer: list[str] = []
         self._thought_flush_task: asyncio.Task[None] | None = None
+        self._tool_buffer: list[dict] = []
+        self._tool_flush_task: asyncio.Task[None] | None = None
 
     async def prewarm_session(self) -> CopilotSessionHandle:
         session_id = await self._acp_new_session()
@@ -439,6 +441,7 @@ class CopilotBridge:
         if session_update == "agent_message_chunk":
             text = str(content.get("text", ""))
             if text and state is not None:
+                self._cancel_vanguard_tasks()
                 state.text_parts.append(text)
                 if state.emit_events:
                     await self._emit_assistant_partial(session_id, state.turn_id, text)
@@ -456,6 +459,10 @@ class CopilotBridge:
             title = str(update.get("title", ""))
             status = str(update.get("status", ""))
             self._logger.info("COPILOT_TOOL_CALL: %s [%s]", title, status)
+            if self._vanguard is not None and status == "pending":
+                raw_input = update.get("rawInput", {})
+                self._tool_buffer.append({"title": title, "rawInput": raw_input})
+                self._schedule_tool_flush()
         elif session_update == "tool_call_update":
             tool_id = str(update.get("toolCallId", ""))[:12]
             status = str(update.get("status", ""))
@@ -470,6 +477,15 @@ class CopilotBridge:
     def _emit_narration(self, text: str) -> None:
         if self._on_narration is not None and text:
             self._on_narration(text)
+
+    def _cancel_vanguard_tasks(self) -> None:
+        for task in (self._thought_flush_task, self._tool_flush_task):
+            if task is not None and not task.done():
+                task.cancel()
+        self._thought_flush_task = None
+        self._tool_flush_task = None
+        self._thought_buffer = []
+        self._tool_buffer = []
 
     async def _vanguard_tool_narration(self, title: str) -> None:
         assert self._vanguard is not None
@@ -492,6 +508,40 @@ class CopilotBridge:
         summary = await self._vanguard.generate_thought_summary(thoughts)
         if summary:
             self._logger.info("VANGUARD_THOUGHT: %s", summary)
+            self._emit_narration(summary)
+
+    def _schedule_tool_flush(self) -> None:
+        if self._tool_flush_task is not None and not self._tool_flush_task.done():
+            return
+        self._tool_flush_task = asyncio.create_task(self._flush_tool_buffer())
+
+    async def _flush_tool_buffer(self) -> None:
+        await asyncio.sleep(2.5)
+        tools = self._tool_buffer
+        self._tool_buffer = []
+        if not tools or self._vanguard is None:
+            return
+        descriptions = []
+        for t in tools:
+            title = t.get("title", "")
+            raw = t.get("rawInput", {})
+            if title.startswith("Viewing"):
+                path = str(raw.get("path", title.replace("Viewing ", "")))
+                name = path.rsplit("/", 1)[-1] if "/" in path else path
+                descriptions.append(f"Read {name}")
+            elif title.startswith("Finding files"):
+                pattern = str(raw.get("pattern", ""))
+                descriptions.append(f"Searched for files matching {pattern}" if pattern else "Searched for files")
+            elif title == "rg":
+                query = str(raw.get("query", raw.get("pattern", "")))
+                descriptions.append(f'Searched codebase for "{query}"' if query else "Searched the codebase")
+            elif title:
+                descriptions.append(title)
+        if not descriptions:
+            return
+        summary = await self._vanguard.generate_tool_summary(descriptions)
+        if summary:
+            self._logger.info("VANGUARD_TOOLS: %s", summary)
             self._emit_narration(summary)
 
     async def _stop_acp(self) -> None:

@@ -12,6 +12,8 @@ _FILLER_SYSTEM = (
     "You are a voice coding assistant. The user just gave you a task. "
     "Generate a short spoken acknowledgment (5-12 words) that shows you understood what they asked. "
     "Reference the specific topic from their request. "
+    "CRITICAL: Do NOT answer the question. Do NOT provide any information. "
+    "You are ONLY acknowledging that you heard them and are about to start working. "
     "Respond with ONLY the acknowledgment, nothing else. Examples: "
     "'Sure, let me check the authentication flow.', "
     "'Looking into the database migrations now.', "
@@ -28,6 +30,13 @@ _THOUGHT_SYSTEM = (
     "You summarize a coding assistant's internal status into one brief spoken sentence (under 12 words). "
     "The assistant is working on a coding task. These are its internal thoughts. "
     "Respond with ONLY the summary, nothing else. Be accurate to what the thoughts say."
+)
+
+
+_TOOL_SUMMARY_SYSTEM = (
+    "You summarize a list of actions a coding assistant just performed into one brief spoken sentence (under 15 words). "
+    "Be factual — only describe what's in the list. Do NOT invent details. "
+    "Respond with ONLY the summary, nothing else."
 )
 
 
@@ -68,6 +77,12 @@ class LocalModelClient:
         return await self._generate(
             _THOUGHT_SYSTEM,
             f"Internal thoughts: {'; '.join(thoughts)}",
+        )
+
+    async def generate_tool_summary(self, descriptions: list[str]) -> str:
+        return await self._generate(
+            _TOOL_SUMMARY_SYSTEM,
+            f"Actions performed:\n- " + "\n- ".join(descriptions),
         )
 
     async def _generate(self, system: str, prompt: str) -> str:
