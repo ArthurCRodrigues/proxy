@@ -135,9 +135,9 @@ class Orchestrator:
         try:
             filler = await self._vanguard.generate_latency_filler(user_text)
             if filler and self._ctx.state == AssistantState.THINKING:
+                self._logger.info("VANGUARD_FILLER: %s (narration_cb=%s)", filler, self._on_narration is not None)
                 if self._on_narration is not None:
                     self._on_narration(filler)
-                self._logger.info("VANGUARD_FILLER: %s", filler)
         except asyncio.CancelledError:
             pass
 
