@@ -163,7 +163,7 @@ Place one or more `.wav` files (PCM 16-bit) in each directory. Proxy picks one a
 
 ### Vanguard mode (optional)
 
-Vanguard uses a local model to fill Copilot's silence with context-aware speech. When enabled, Proxy acknowledges your prompt immediately ("Hold on, let me check the autograder") while Copilot boots up, and you can ask "what's happening?" anytime to hear a summary of what Copilot is doing.
+Vanguard uses a local model to fill Copilot's silence with context-aware speech. When enabled, Proxy acknowledges your prompt immediately ("Hold on, let me analyze that issue") while Copilot boots up, and you can ask "what's happening?" anytime to hear a summary of what Copilot is doing.
 
 Requires [Ollama](https://ollama.com) running locally:
 
