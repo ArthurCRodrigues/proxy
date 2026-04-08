@@ -48,10 +48,12 @@ class LocalModelClient:
         base_url: str = "http://localhost:11434",
         model: str = "llama3.2:3b",
         timeout_s: float = 2.0,
+        context: str = "",
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._timeout_s = timeout_s
+        self._context = context
 
     async def warmup(self) -> None:
         try:
@@ -82,9 +84,10 @@ class LocalModelClient:
         )
 
     async def _generate(self, system: str, prompt: str) -> str:
+        full_system = f"{system}\nContext: {self._context}" if self._context else system
         try:
             return await asyncio.wait_for(
-                asyncio.to_thread(self._call_ollama, system, prompt),
+                asyncio.to_thread(self._call_ollama, full_system, prompt),
                 timeout=self._timeout_s,
             )
         except TimeoutError:

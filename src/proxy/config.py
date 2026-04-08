@@ -87,6 +87,8 @@ class Settings:
     vanguard_model: str = "llama3.2:3b"
     vanguard_base_url: str = "http://localhost:11434"
     vanguard_timeout_s: float = 2.0
+    vanguard_context: str = ""
+    vanguard_narration_interval_s: float = 15.0
     tts_speak_partials: bool = True
     tts_partial_min_chars: int = 12
     tts_partial_force_flush_chars: int = 72
@@ -180,6 +182,8 @@ class Settings:
             vanguard_model=os.getenv("PROXY_VANGUARD_MODEL", "llama3.2:3b"),
             vanguard_base_url=os.getenv("PROXY_VANGUARD_BASE_URL", "http://localhost:11434"),
             vanguard_timeout_s=float(os.getenv("PROXY_VANGUARD_TIMEOUT_S", "2.0")),
+            vanguard_context=os.getenv("PROXY_VANGUARD_CONTEXT", ""),
+            vanguard_narration_interval_s=float(os.getenv("PROXY_VANGUARD_NARRATION_INTERVAL_S", "15.0")),
             tts_speak_partials=os.getenv("PROXY_TTS_SPEAK_PARTIALS", "1")
             in ("1", "true", "True"),
             tts_partial_min_chars=max(1, int(os.getenv("PROXY_TTS_PARTIAL_MIN_CHARS", "12"))),

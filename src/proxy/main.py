@@ -256,6 +256,7 @@ async def _run() -> None:
             base_url=settings.vanguard_base_url,
             model=settings.vanguard_model,
             timeout_s=settings.vanguard_timeout_s,
+            context=settings.vanguard_context,
         )
         logger.info("Vanguard mode enabled (model=%s)", settings.vanguard_model)
         asyncio.create_task(vanguard.warmup())
@@ -271,6 +272,7 @@ async def _run() -> None:
         on_narration=_on_narration,
         persona=settings.copilot_persona,
         vanguard=vanguard,
+        vanguard_narration_interval_s=settings.vanguard_narration_interval_s,
     )
     session_pool = SessionPool(bridge=copilot)
     tts_task = asyncio.create_task(_tts_loop())

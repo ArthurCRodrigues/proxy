@@ -41,6 +41,7 @@ class CopilotBridge:
         on_narration: Callable[[str], None] | None = None,
         persona: str = "",
         vanguard: "LocalModelClient | None" = None,
+        vanguard_narration_interval_s: float = 15.0,
     ) -> None:
         self._event_bus = event_bus
         self._command = command
@@ -65,6 +66,7 @@ class CopilotBridge:
         self._last_thought = ""
         self._vanguard = vanguard
         self._persona = persona
+        self._vanguard_interval_s = vanguard_narration_interval_s
         self._thought_buffer: list[str] = []
         self._thought_flush_task: asyncio.Task[None] | None = None
         self._tool_buffer: list[dict] = []
@@ -500,7 +502,7 @@ class CopilotBridge:
         self._thought_flush_task = asyncio.create_task(self._flush_thought_buffer())
 
     async def _flush_thought_buffer(self) -> None:
-        await asyncio.sleep(2.5)
+        await asyncio.sleep(self._vanguard_interval_s)
         thoughts = self._thought_buffer
         self._thought_buffer = []
         if not thoughts or self._vanguard is None:
@@ -516,7 +518,7 @@ class CopilotBridge:
         self._tool_flush_task = asyncio.create_task(self._flush_tool_buffer())
 
     async def _flush_tool_buffer(self) -> None:
-        await asyncio.sleep(2.5)
+        await asyncio.sleep(self._vanguard_interval_s)
         tools = self._tool_buffer
         self._tool_buffer = []
         if not tools or self._vanguard is None:
