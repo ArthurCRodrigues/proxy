@@ -27,9 +27,9 @@ Proxy sits between you and your agent — that's it. It's not a new AI, not a fr
 ## What does it look like?
 
 ```
-You:     "Proxy, what's the technical debt in the autograder repo?"
+You:     "Proxy, what's the technical debt in the java repo?"
 Proxy:   *acknowledgment sound*
-Proxy:   "Alright, let me check the autograder." ← latency filler
+Proxy:   "Alright, let me check that repo TD list." ← latency filler
          Reading 8 files...                      ← terminal log
 Proxy:   "I found three main areas of            ← streamed response
           technical debt. First, the config
