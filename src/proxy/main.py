@@ -296,7 +296,6 @@ async def _run() -> None:
         on_narration=_on_narration,
         persona=settings.copilot_persona,
         vanguard=vanguard,
-        vanguard_narration_interval_s=settings.vanguard_narration_interval_s,
     )
     session_pool = SessionPool(bridge=copilot)
     tts_synth_task = asyncio.create_task(_tts_synth_loop())
@@ -354,6 +353,7 @@ async def _run() -> None:
             stopword_phrases=[p.strip() for p in settings.stopword_aliases.split(",") if p.strip()],
             stopword_enabled=lambda: orchestrator.context.state in (AssistantState.THINKING, AssistantState.SPEAKING),
             stopword_cooldown_ms=settings.stopword_cooldown_ms,
+            status_phrases=[p.strip() for p in settings.status_phrases.split(",") if p.strip()],
         )
         await wake_vad.start()
         logger.info(

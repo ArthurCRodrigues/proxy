@@ -23,7 +23,9 @@ The adapter tries the primary output format (`pcm_22050`), falling back to `wav_
 
 ## Thought narration
 
-When Copilot emits `agent_thought_chunk` events (e.g. "Reviewing technical debt", "Exploring codebase"), the bridge fires an `on_narration` callback that enqueues the thought text into the same TTS queue. Consecutive duplicate thoughts are suppressed.
+Copilot emits `agent_thought_chunk` and `tool_call` events during processing. These are logged to an activity buffer in the bridge. The user can request a spoken summary at any time by saying a status phrase (default: "what's happening" or "status"). If vanguard mode is enabled, the local model summarizes the buffer into a natural spoken sentence. Without vanguard, the raw activity log is spoken directly.
+
+Latency fillers (short acknowledgments like "Hold on, let me check that") are spoken immediately after the user's prompt when vanguard mode is enabled, filling the silence while Copilot boots up.
 
 ## Playback
 

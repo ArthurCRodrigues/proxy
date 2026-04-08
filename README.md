@@ -29,7 +29,7 @@ Proxy sits between you and your agent — that's it. It's not a new AI, not a fr
 ```
 You:     "Proxy, what's the technical debt in the autograder repo?"
 Proxy:   *acknowledgment sound*
-Proxy:   "Reviewing technical debt..."           ← spoken thought
+Proxy:   "Alright, let me check the autograder." ← latency filler
          Reading 8 files...                      ← terminal log
 Proxy:   "I found three main areas of            ← streamed response
           technical debt. First, the config
@@ -49,7 +49,7 @@ No browser tabs. No copy-paste. No keyboard. Just your voice and your code.
 
 **Streaming responses** — Hear Copilot's answer while it's still generating. Sentence-boundary chunking feeds ElevenLabs TTS in real-time.
 
-**Thought narration** — When Copilot is thinking ("Reviewing technical debt", "Exploring codebase"), Proxy speaks it so you know what's happening.
+**On-demand status** — Say "what's happening?" during long silences to hear what Copilot is doing. Proxy summarizes recent tool calls and thoughts into one spoken sentence.
 
 **Voice interruption** — Say "stop" anytime during a response to cancel and take back control. Instantly.
 

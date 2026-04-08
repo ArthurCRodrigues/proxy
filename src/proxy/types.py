@@ -20,6 +20,7 @@ class EventType(str, Enum):
     LISTENING_TIMEOUT = "LISTENING_TIMEOUT"
     CANCEL = "CANCEL"
     INTERRUPT = "INTERRUPT"
+    STATUS_REQUEST = "STATUS_REQUEST"
 
 
 class AssistantState(str, Enum):

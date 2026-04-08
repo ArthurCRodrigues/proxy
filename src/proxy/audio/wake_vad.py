@@ -66,6 +66,7 @@ class WakeVadEngine:
         stopword_phrases: list[str] | None = None,
         stopword_enabled: Callable[[], bool] | None = None,
         stopword_cooldown_ms: int = 1500,
+        status_phrases: list[str] | None = None,
     ) -> None:
         self._event_bus = event_bus
         self._audio_io = audio_io
@@ -95,6 +96,7 @@ class WakeVadEngine:
         self._stopword_enabled = stopword_enabled
         self._stopword_cooldown_s = stopword_cooldown_ms / 1000.0
         self._last_stopword_at = 0.0
+        self._status_phrases = status_phrases or []
 
     async def start(self) -> None:
         if self._running:
@@ -157,8 +159,13 @@ class WakeVadEngine:
                     text, _ = extract_recognizer_text(result)
                     if text:
                         self._logger.debug("Wake result text: %s", text)
+                # Status check (active during THINKING/SPEAKING, before stopword)
+                if self._stopword_should_trigger() and self._status_phrases and contains_wake_phrase(result, self._status_phrases):
+                    await self._event_bus.publish(Event(type=EventType.STATUS_REQUEST))
+                    self._reset_wake_recognizer()
+                    self._logger.info("Status request detected")
                 # Stopword check (active during THINKING/SPEAKING)
-                if self._stopword_should_trigger() and contains_wake_phrase(result, self._stopword_phrases):
+                elif self._stopword_should_trigger() and contains_wake_phrase(result, self._stopword_phrases):
                     await self._event_bus.publish(Event(type=EventType.INTERRUPT))
                     self._last_stopword_at = monotonic()
                     self._reset_wake_recognizer()

@@ -116,6 +116,11 @@ class Orchestrator:
         if event.type == EventType.INTERRUPT:
             if self._on_interrupt is not None:
                 await self._on_interrupt()
+        if event.type == EventType.STATUS_REQUEST:
+            if self._copilot is not None and self._on_narration is not None:
+                summary = self._copilot.get_activity_summary()
+                if summary:
+                    asyncio.create_task(self._speak_status(summary))
 
     def _on_state_change(self, previous: AssistantState, new: AssistantState) -> None:
         if new == AssistantState.LISTENING:
@@ -129,6 +134,16 @@ class Orchestrator:
         if self._filler_task is not None and not self._filler_task.done():
             self._filler_task.cancel()
         self._filler_task = None
+
+    async def _speak_status(self, raw_summary: str) -> None:
+        if self._vanguard is not None:
+            summary = await self._vanguard.generate_tool_summary(
+                [line.strip() for line in raw_summary.split("\n") if line.strip()]
+            )
+            if summary:
+                self._on_narration(summary)
+        else:
+            self._on_narration(raw_summary)
 
     async def _emit_latency_filler(self, user_text: str) -> None:
         assert self._vanguard is not None

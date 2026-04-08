@@ -19,7 +19,7 @@ How Proxy boots, processes a voice interaction, and shuts down.
 1. **Wake** — Vosk detects "Proxy". `WAKE` event published. State: IDLE → WAKE_DETECTED.
 2. **Wake handling** — Session activated, wake sound played (greeting on first wake, casual on subsequent). `READY` event published. State: WAKE_DETECTED → LISTENING. Turn timer starts.
 3. **Listening** — Audio forwarded to Deepgram. Partials arrive and reset the listening timeout. User finishes speaking, Deepgram sends finalized segments, then UtteranceEnd. `USER_FINAL` published. State: LISTENING → THINKING.
-4. **Thinking** — Transcript sent to Copilot. Copilot may emit thoughts ("Reviewing technical debt") which are spoken via TTS. Tool calls are logged. First response partial arrives. State: THINKING → SPEAKING.
+4. **Thinking** — Transcript sent to Copilot. Thoughts and tool calls are logged to an activity buffer. If vanguard mode is enabled, a latency filler is spoken. First response partial arrives. State: THINKING → SPEAKING.
 5. **Speaking** — Copilot streams text. Chunking layer splits at sentence boundaries. Each chunk is synthesized by ElevenLabs and played back. State remains SPEAKING.
 6. **Completion** — `ASSISTANT_FINAL` arrives. Remaining TTS buffer flushed. Turn timing logged. State: SPEAKING → IDLE. Ready for next wake word.
 
