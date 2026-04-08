@@ -24,7 +24,6 @@ def split_pcm_chunks(data: bytes, bytes_per_chunk: int) -> list[bytes]:
 
 class PlaybackEngine:
     def __init__(self) -> None:
-        self._play_task: asyncio.Task[None] | None = None
         self._stream: Any | None = None
         self._stream_rate: int = 0
         self._stream_channels: int = 0
@@ -60,33 +59,17 @@ class PlaybackEngine:
         self._stream_channels = 0
 
     async def play_pcm(self, audio: PcmAudio) -> None:
-        await self.cancel()
-        self._play_task = asyncio.create_task(self._play_worker(audio))
-        await self._play_task
-
-    async def _play_worker(self, audio: PcmAudio) -> None:
         stream = self._ensure_stream(audio.sample_rate, audio.channels)
         bytes_per_frame = audio.channels * audio.sample_width
         frames_per_chunk = max(1, int(audio.sample_rate * 0.02))
         bytes_per_chunk = frames_per_chunk * bytes_per_frame
         chunks = split_pcm_chunks(audio.data, bytes_per_chunk)
-        try:
-            for chunk in chunks:
-                stream.write(chunk)
-                await asyncio.sleep(0)
-        except asyncio.CancelledError:
-            raise
+        for chunk in chunks:
+            stream.write(chunk)
+            await asyncio.sleep(0)
 
     async def cancel(self) -> None:
-        if self._play_task is not None:
-            if not self._play_task.done():
-                self._play_task.cancel()
-                try:
-                    await self._play_task
-                except asyncio.CancelledError:
-                    pass
-            self._play_task = None
+        self._close_stream()
 
     async def shutdown(self) -> None:
-        await self.cancel()
         self._close_stream()
