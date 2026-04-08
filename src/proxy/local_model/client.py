@@ -62,10 +62,10 @@ class LocalModelClient:
                 timeout=self._timeout_s,
             )
         except TimeoutError:
-            _logger.debug("Local model timed out")
+            _logger.warning("Local model timed out")
             return ""
         except Exception as exc:
-            _logger.debug("Local model error: %s", exc)
+            _logger.warning("Local model error: %s", exc)
             return ""
 
     def _call_ollama(self, system: str, prompt: str) -> str:
