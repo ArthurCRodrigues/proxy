@@ -64,12 +64,15 @@ class PlaybackEngine:
         frames_per_chunk = max(1, int(audio.sample_rate * 0.02))
         bytes_per_chunk = frames_per_chunk * bytes_per_frame
         chunks = split_pcm_chunks(audio.data, bytes_per_chunk)
-        for chunk in chunks:
-            stream.write(chunk)
-            await asyncio.sleep(0)
+        await asyncio.to_thread(self._write_chunks, stream, chunks)
 
     async def cancel(self) -> None:
         self._close_stream()
+
+    @staticmethod
+    def _write_chunks(stream: Any, chunks: list[bytes]) -> None:
+        for chunk in chunks:
+            stream.write(chunk)
 
     async def shutdown(self) -> None:
         self._close_stream()
