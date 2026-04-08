@@ -35,7 +35,7 @@ def apply_event(ctx: OrchestratorContext, event: Event) -> OrchestratorContext:
             session_id=ctx.session_id,
             turn_id=ctx.turn_id,
         )
-    if event.type in (EventType.ERROR, EventType.USER_PARTIAL):
+    if event.type in (EventType.ERROR, EventType.USER_PARTIAL, EventType.STATUS_REQUEST):
         return ctx
 
     # Per-state transitions

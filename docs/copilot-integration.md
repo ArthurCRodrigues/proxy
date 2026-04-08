@@ -27,7 +27,7 @@ The ACP reader loop processes all `session/update` notifications:
 | `sessionUpdate` | Handling |
 |---|---|
 | `agent_message_chunk` | Text appended to response, `on_assistant_partial` callback fired |
-| `agent_thought_chunk` | Logged as `COPILOT_THOUGHT`, spoken via `on_narration` callback (deduplicated) |
+| `agent_thought_chunk` | Logged as `COPILOT_THOUGHT`, buffered for on-demand status summary |
 | `tool_call` | Logged as `COPILOT_TOOL_CALL` with title and status |
 | `tool_call_update` | Logged as `COPILOT_TOOL_UPDATE` with status |
 

@@ -61,6 +61,7 @@ class Settings:
     stopword_phrase: str = "stop"
     stopword_aliases: str = "stop,shut up"
     stopword_cooldown_ms: int = 1500
+    status_phrases: str = "what's happening,status"
     deepgram_model: str = "nova-3"
     deepgram_language: str = "en-US"
     deepgram_endpointing_enabled: bool = True
@@ -82,6 +83,12 @@ class Settings:
     copilot_model: str = ""
     copilot_allow_all: bool = True
     copilot_instructions_path: str = _default_copilot_instructions_path()
+    copilot_persona: str = ""
+    vanguard_enabled: bool = False
+    vanguard_model: str = "llama3.2:3b"
+    vanguard_base_url: str = "http://localhost:11434"
+    vanguard_timeout_s: float = 2.0
+    vanguard_context: str = ""
     tts_speak_partials: bool = True
     tts_partial_min_chars: int = 12
     tts_partial_force_flush_chars: int = 72
@@ -137,6 +144,7 @@ class Settings:
             stopword_phrase=os.getenv("PROXY_STOPWORD_PHRASE", "stop"),
             stopword_aliases=os.getenv("PROXY_STOPWORD_ALIASES", "stop,shut up"),
             stopword_cooldown_ms=int(os.getenv("PROXY_STOPWORD_COOLDOWN_MS", "1500")),
+            status_phrases=os.getenv("PROXY_STATUS_PHRASES", "what's happening,status"),
             deepgram_model=os.getenv("PROXY_DEEPGRAM_MODEL", "nova-3"),
             deepgram_language=os.getenv("PROXY_DEEPGRAM_LANGUAGE", "en-US"),
             deepgram_endpointing_enabled=os.getenv("PROXY_DEEPGRAM_ENDPOINTING_ENABLED", "1")
@@ -170,6 +178,12 @@ class Settings:
             copilot_allow_all=os.getenv("PROXY_COPILOT_ALLOW_ALL", "1")
             in ("1", "true", "True"),
             copilot_instructions_path=copilot_instructions_path,
+            copilot_persona=os.getenv("PROXY_COPILOT_PERSONA", ""),
+            vanguard_enabled=os.getenv("PROXY_VANGUARD_ENABLED", "0") in ("1", "true", "True"),
+            vanguard_model=os.getenv("PROXY_VANGUARD_MODEL", "llama3.2:3b"),
+            vanguard_base_url=os.getenv("PROXY_VANGUARD_BASE_URL", "http://localhost:11434"),
+            vanguard_timeout_s=float(os.getenv("PROXY_VANGUARD_TIMEOUT_S", "2.0")),
+            vanguard_context=os.getenv("PROXY_VANGUARD_CONTEXT", ""),
             tts_speak_partials=os.getenv("PROXY_TTS_SPEAK_PARTIALS", "1")
             in ("1", "true", "True"),
             tts_partial_min_chars=max(1, int(os.getenv("PROXY_TTS_PARTIAL_MIN_CHARS", "12"))),

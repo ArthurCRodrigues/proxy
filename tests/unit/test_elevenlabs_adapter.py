@@ -36,7 +36,7 @@ def test_cancel_sets_flag() -> None:
 
 def test_adapter_defaults_to_quality_profile() -> None:
     adapter = ElevenLabsTTSAdapter(api_key="key", voice_id="voice")
-    assert adapter._model_id == "eleven_multilingual_v2"
+    assert adapter._model_id == "eleven_v3"
     assert adapter._output_format == "pcm_22050"
     assert adapter._fallback_output_formats == ("wav_22050",)
     assert adapter._stability == 0.45

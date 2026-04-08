@@ -39,6 +39,8 @@ class CopilotBridge:
         on_assistant_partial: Callable[[str, str | None], None] | None = None,
         on_assistant_final: Callable[[str, str | None], None] | None = None,
         on_narration: Callable[[str], None] | None = None,
+        persona: str = "",
+        vanguard: "LocalModelClient | None" = None,
     ) -> None:
         self._event_bus = event_bus
         self._command = command
@@ -61,6 +63,9 @@ class CopilotBridge:
         self._on_assistant_final = on_assistant_final
         self._on_narration = on_narration
         self._last_thought = ""
+        self._vanguard = vanguard
+        self._persona = persona
+        self._activity_log: list[str] = []
 
     async def prewarm_session(self) -> CopilotSessionHandle:
         session_id = await self._acp_new_session()
@@ -91,6 +96,9 @@ class CopilotBridge:
             except TimeoutError:
                 await self._cancel_bootstrap_task()
         include_bootstrap = session.session_id not in self._bootstrapped_sessions
+        if include_bootstrap and self._bootstrap_task is not None:
+            # Bootstrap is in flight — it will handle instructions. Don't duplicate.
+            include_bootstrap = False
         if self._active_task is not None and not self._active_task.done():
             await self._cancel_active_task()
             if self._active_session is not None:
@@ -430,6 +438,7 @@ class CopilotBridge:
         if session_update == "agent_message_chunk":
             text = str(content.get("text", ""))
             if text and state is not None:
+                self._cancel_vanguard_tasks()
                 state.text_parts.append(text)
                 if state.emit_events:
                     await self._emit_assistant_partial(session_id, state.turn_id, text)
@@ -438,11 +447,14 @@ class CopilotBridge:
             if text and text != self._last_thought:
                 self._last_thought = text
                 self._logger.info("COPILOT_THOUGHT: %s", text)
-                self._emit_narration(text)
+                self._activity_log.append(f"Thinking: {text}")
         elif session_update == "tool_call":
             title = str(update.get("title", ""))
             status = str(update.get("status", ""))
             self._logger.info("COPILOT_TOOL_CALL: %s [%s]", title, status)
+            if status == "pending" and title:
+                raw_input = update.get("rawInput", {})
+                self._activity_log.append(self._describe_tool(title, raw_input))
         elif session_update == "tool_call_update":
             tool_id = str(update.get("toolCallId", ""))[:12]
             status = str(update.get("status", ""))
@@ -455,8 +467,34 @@ class CopilotBridge:
             )
 
     def _emit_narration(self, text: str) -> None:
-        if self._on_narration is not None:
+        if self._on_narration is not None and text:
             self._on_narration(text)
+
+    def _cancel_vanguard_tasks(self) -> None:
+        self._activity_log = []
+
+    def get_activity_summary(self) -> str:
+        if not self._activity_log:
+            return "Nothing yet, still waiting."
+        summary = "\n".join(self._activity_log[-20:])
+        return summary
+
+    def clear_activity_log(self) -> None:
+        self._activity_log = []
+
+    @staticmethod
+    def _describe_tool(title: str, raw_input: dict) -> str:
+        if title.startswith("Viewing"):
+            path = str(raw_input.get("path", title.replace("Viewing ", "")))
+            name = path.rsplit("/", 1)[-1] if "/" in path else path
+            return f"Read {name}"
+        if title.startswith("Finding files"):
+            pattern = str(raw_input.get("pattern", ""))
+            return f"Searched for files matching {pattern}" if pattern else "Searched for files"
+        if title == "rg":
+            query = str(raw_input.get("query", raw_input.get("pattern", "")))
+            return f'Searched codebase for "{query}"' if query else "Searched the codebase"
+        return title if title else "Used a tool"
 
     async def _stop_acp(self) -> None:
         if self._acp_reader_task is not None and not self._acp_reader_task.done():
@@ -478,8 +516,9 @@ class CopilotBridge:
     _DEFAULT_INSTRUCTIONS = (
         "You are a voice assistant. The user is speaking to you through speech-to-text, "
         "and your responses will be read aloud via text-to-speech. "
-        "Respond using plain, conversational language. Keep answers concise and natural for spoken delivery. "
-        "Avoid markdown, code fences, bullet lists, or any visual formatting."
+        "Respond using plain, conversational language. Keep answers concise — aim for 2-3 sentences unless the user asks for detail. "
+        "Avoid markdown, code fences, bullet lists, or any visual formatting. "
+        "Do not read out file contents or code unless specifically asked. Summarize findings instead of listing everything."
     )
 
     def _with_bootstrap_instructions(self, prompt: str, include_bootstrap: bool) -> str:
@@ -490,13 +529,17 @@ class CopilotBridge:
         if path.exists():
             content = path.read_text(encoding="utf-8").strip()
             if content:
-                return (
-                    f"System bootstrap instructions:\\n{content}\\n\\n"
-                    f"User request (verbatim STT):\\n{prompt}"
-                )
+                instructions = content
+            else:
+                instructions = self._DEFAULT_INSTRUCTIONS
+        else:
+            self._logger.info("No instructions file found at %s; using default voice instructions", path)
+            instructions = self._DEFAULT_INSTRUCTIONS
 
-        self._logger.info("No instructions file found at %s; using default voice instructions", path)
+        if self._persona:
+            instructions = f"{instructions}\n\nPersona/tone: {self._persona}"
+
         return (
-            f"System bootstrap instructions:\\n{self._DEFAULT_INSTRUCTIONS}\\n\\n"
+            f"System bootstrap instructions:\\n{instructions}\\n\\n"
             f"User request (verbatim STT):\\n{prompt}"
         )

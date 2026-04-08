@@ -3,8 +3,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import re
+from typing import Any
 
-from proxy.audio.assets import choose_wake_sounds_dir, load_random_wake_audio
+from proxy.audio.assets import PcmAudio, choose_wake_sounds_dir, load_random_wake_audio
 from proxy.audio.io import AudioIO, list_input_devices
 from proxy.audio.playback import PlaybackEngine
 from proxy.audio.wake_vad import WakeVadEngine
@@ -90,7 +91,9 @@ async def _run() -> None:
     echo_filter = EchoFilter(similarity_threshold=settings.stt_deecho_similarity_threshold)
     orchestrator: Orchestrator | None = None
     tts_queue: asyncio.Queue[tuple[str | None, str | None, bool]] = asyncio.Queue(maxsize=64)
-    tts_task: asyncio.Task[None] | None = None
+    tts_playback_queue: asyncio.Queue[tuple[PcmAudio | None, str | None, bool]] = asyncio.Queue(maxsize=8)
+    tts_synth_task: asyncio.Task[None] | None = None
+    tts_play_task: asyncio.Task[None] | None = None
     tts_text_buffer = ""
     tts_partial_seen_since_final = False
     cancel_commands = _parse_cancel_commands(settings.cancel_commands)
@@ -199,17 +202,20 @@ async def _run() -> None:
             turn_timer.stamp("assistant_final")
             turn_timer.log_summary()
 
-    async def _tts_loop() -> None:
+    def _drain_queue(queue: asyncio.Queue[Any]) -> None:
+        while not queue.empty():
+            try:
+                queue.get_nowait()
+                queue.task_done()
+            except asyncio.QueueEmpty:
+                break
+
+    async def _tts_synth_loop() -> None:
         while True:
             text, turn_id, turn_done = await tts_queue.get()
             try:
                 if turn_done:
-                    await bus.publish(
-                        Event(
-                            type=EventType.ASSISTANT_AUDIO_DONE,
-                            turn_id=turn_id,
-                        )
-                    )
+                    await tts_playback_queue.put((None, turn_id, True))
                     continue
                 cleaned = (text or "").strip()
                 if not cleaned:
@@ -222,11 +228,29 @@ async def _run() -> None:
                 try:
                     audio = await tts.synthesize_text(cleaned)
                     if audio.data:
-                        await playback.play_pcm(audio)
+                        await tts_playback_queue.put((audio, turn_id, False))
                 except Exception as exc:
-                    logger.error("TTS synthesis/playback error: %s", exc)
+                    logger.error("TTS synthesis error: %s", exc)
             finally:
                 tts_queue.task_done()
+
+    async def _tts_playback_loop() -> None:
+        while True:
+            audio, turn_id, turn_done = await tts_playback_queue.get()
+            try:
+                if turn_done:
+                    await bus.publish(
+                        Event(
+                            type=EventType.ASSISTANT_AUDIO_DONE,
+                            turn_id=turn_id,
+                        )
+                    )
+                    continue
+                if audio is None or not audio.data:
+                    continue
+                await playback.play_pcm(audio)
+            finally:
+                tts_playback_queue.task_done()
 
     stt.on_partial(_on_partial)
     stt.on_final(_on_final)
@@ -248,6 +272,19 @@ async def _run() -> None:
             except asyncio.QueueFull:
                 logger.debug("TTS queue full; dropping narration")
 
+    # Vanguard mode (local model narration)
+    vanguard = None
+    if settings.vanguard_enabled:
+        from proxy.local_model.client import LocalModelClient
+        vanguard = LocalModelClient(
+            base_url=settings.vanguard_base_url,
+            model=settings.vanguard_model,
+            timeout_s=settings.vanguard_timeout_s,
+            context=settings.vanguard_context,
+        )
+        logger.info("Vanguard mode enabled (model=%s)", settings.vanguard_model)
+        asyncio.create_task(vanguard.warmup())
+
     copilot = CopilotBridge(
         event_bus=bus,
         command=settings.copilot_command,
@@ -257,9 +294,12 @@ async def _run() -> None:
         on_assistant_partial=_on_assistant_partial,
         on_assistant_final=_on_assistant_final,
         on_narration=_on_narration,
+        persona=settings.copilot_persona,
+        vanguard=vanguard,
     )
     session_pool = SessionPool(bridge=copilot)
-    tts_task = asyncio.create_task(_tts_loop())
+    tts_synth_task = asyncio.create_task(_tts_synth_loop())
+    tts_play_task = asyncio.create_task(_tts_playback_loop())
 
     async def on_wake() -> None:
         nonlocal first_wake, turn_timer
@@ -282,18 +322,14 @@ async def _run() -> None:
         nonlocal tts_text_buffer, tts_partial_seen_since_final
         logger.info("Interrupt: cancelling copilot and TTS")
         await copilot.hard_stop_turn()
+        await tts.cancel()
         await playback.cancel()
         tts_text_buffer = ""
         tts_partial_seen_since_final = False
-        # Drain TTS queue
-        while not tts_queue.empty():
-            try:
-                tts_queue.get_nowait()
-                tts_queue.task_done()
-            except asyncio.QueueEmpty:
-                break
+        _drain_queue(tts_queue)
+        _drain_queue(tts_playback_queue)
 
-    orchestrator = Orchestrator(bus, on_wake=on_wake, copilot_bridge=copilot, on_interrupt=on_interrupt)
+    orchestrator = Orchestrator(bus, on_wake=on_wake, copilot_bridge=copilot, on_interrupt=on_interrupt, on_narration=_on_narration, vanguard=vanguard)
     orchestrator.set_listening_timeout(settings.listening_timeout_ms)
     runner = asyncio.create_task(orchestrator.run())
 
@@ -317,6 +353,7 @@ async def _run() -> None:
             stopword_phrases=[p.strip() for p in settings.stopword_aliases.split(",") if p.strip()],
             stopword_enabled=lambda: orchestrator.context.state in (AssistantState.THINKING, AssistantState.SPEAKING),
             stopword_cooldown_ms=settings.stopword_cooldown_ms,
+            status_phrases=[p.strip() for p in settings.status_phrases.split(",") if p.strip()],
         )
         await wake_vad.start()
         logger.info(
@@ -336,10 +373,16 @@ async def _run() -> None:
             await wake_vad.stop()
         await copilot.hard_stop()
         await tts.cancel()
-        if tts_task is not None and not tts_task.done():
-            tts_task.cancel()
+        if tts_synth_task is not None and not tts_synth_task.done():
+            tts_synth_task.cancel()
             try:
-                await tts_task
+                await tts_synth_task
+            except asyncio.CancelledError:
+                pass
+        if tts_play_task is not None and not tts_play_task.done():
+            tts_play_task.cancel()
+            try:
+                await tts_play_task
             except asyncio.CancelledError:
                 pass
         await playback.cancel()
@@ -461,6 +504,38 @@ def _init() -> None:
         print("      ✗ copilot not found in PATH")
         print("      Install: https://docs.github.com/en/copilot/github-copilot-in-the-cli")
 
+    # Optional: Vanguard mode
+    vanguard_enabled = False
+    print()
+    vanguard = input("Enable Vanguard mode? (local model for latency fillers, requires Ollama) [y/N] ").strip().lower()
+    if vanguard in ("y", "yes"):
+        if shutil.which("ollama"):
+            print("      ✓ ollama found")
+            # Check if model is pulled
+            try:
+                result = subprocess.run(["ollama", "list"], capture_output=True, text=True)
+                if "llama3.2:3b" not in result.stdout:
+                    pull = input("      Model llama3.2:3b not found. Pull now? (~2GB) [Y/n] ").strip().lower()
+                    if pull in ("", "y", "yes"):
+                        print("      Pulling llama3.2:3b...")
+                        subprocess.run(["ollama", "pull", "llama3.2:3b"], check=True)
+                        print("      ✓ model pulled")
+                else:
+                    print("      ✓ llama3.2:3b model found")
+                vanguard_enabled = True
+            except Exception as exc:
+                print(f"      ✗ error checking model: {exc}")
+        else:
+            print("      ✗ ollama not found")
+            print("      Install: curl -fsSL https://ollama.com/install.sh | sh")
+            print("      Then run: ollama pull llama3.2:3b && ollama serve")
+
+    vanguard_context = ""
+    if vanguard_enabled:
+        print("      Context helps the local model reference your projects by name.")
+        print("      Example: 'Projects: my-api, my-frontend. Languages: Python, TypeScript.'")
+        vanguard_context = input("      Your context: ").strip()
+
     # Write .env
     print()
     if env_file.exists():
@@ -468,9 +543,9 @@ def _init() -> None:
         if overwrite not in ("y", "yes"):
             print("Keeping existing .env")
         else:
-            _write_env(env_file, env_example, deepgram_key, elevenlabs_key, elevenlabs_voice)
+            _write_env(env_file, env_example, deepgram_key, elevenlabs_key, elevenlabs_voice, vanguard_enabled, vanguard_context)
     else:
-        _write_env(env_file, env_example, deepgram_key, elevenlabs_key, elevenlabs_voice)
+        _write_env(env_file, env_example, deepgram_key, elevenlabs_key, elevenlabs_voice, vanguard_enabled, vanguard_context)
 
     # Optional: startup service
     print()
@@ -490,6 +565,8 @@ def _write_env(
     deepgram_key: str,
     elevenlabs_key: str,
     elevenlabs_voice: str,
+    vanguard_enabled: bool = False,
+    vanguard_context: str = "",
 ) -> None:
     from pathlib import Path
 
@@ -502,6 +579,7 @@ def _write_env(
         "DEEPGRAM_API_KEY=": f"DEEPGRAM_API_KEY={deepgram_key}",
         "ELEVENLABS_API_KEY=": f"ELEVENLABS_API_KEY={elevenlabs_key}",
         "ELEVENLABS_VOICE_ID=": f"ELEVENLABS_VOICE_ID={elevenlabs_voice}",
+        "PROXY_VANGUARD_ENABLED=0": f"PROXY_VANGUARD_ENABLED={'1' if vanguard_enabled else '0'}",
     }
 
     lines = content.splitlines()
@@ -509,12 +587,15 @@ def _write_env(
     for line in lines:
         replaced = False
         for prefix, replacement in replacements.items():
-            if line.strip().startswith(prefix) and line.strip() == prefix:
+            if line.strip() == prefix:
                 result.append(replacement)
                 replaced = True
                 break
         if not replaced:
             result.append(line)
+
+    if vanguard_enabled and vanguard_context:
+        result.append(f"PROXY_VANGUARD_CONTEXT={vanguard_context}")
 
     env_file.write_text("\n".join(result) + "\n", encoding="utf-8")
     print(f"      Wrote {env_file}")
