@@ -21,6 +21,7 @@ class Orchestrator:
         on_wake: Callable[[], Awaitable[None]] | None = None,
         copilot_bridge: CopilotBridge | None = None,
         on_interrupt: Callable[[], Awaitable[None]] | None = None,
+        on_narration: Callable[[str], None] | None = None,
         vanguard: "LocalModelClient | None" = None,
     ) -> None:
         self._event_bus = event_bus
@@ -29,6 +30,7 @@ class Orchestrator:
         self._running = False
         self._on_wake = on_wake
         self._on_interrupt = on_interrupt
+        self._on_narration = on_narration
         self._copilot = copilot_bridge
         self._vanguard = vanguard
         self._filler_task: asyncio.Task[None] | None = None

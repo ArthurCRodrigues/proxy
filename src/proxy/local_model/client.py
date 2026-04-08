@@ -40,8 +40,8 @@ class LocalModelClient:
     async def warmup(self) -> None:
         try:
             await asyncio.wait_for(
-                asyncio.to_thread(self._call_ollama_raw, "Reply with OK.", "warmup", 30.0),
-                timeout=35.0,
+                asyncio.to_thread(self._call_ollama_raw, "Reply with OK.", "warmup", 60.0),
+                timeout=65.0,
             )
             _logger.info("Local model warmed up")
         except Exception as exc:
