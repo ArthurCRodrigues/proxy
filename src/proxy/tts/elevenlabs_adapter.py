@@ -14,7 +14,7 @@ class ElevenLabsTTSAdapter:
         self,
         api_key: str,
         voice_id: str,
-        model_id: str = "eleven_multilingual_v2",
+        model_id: str = "eleven_v3",
         output_format: str = "pcm_22050",
         fallback_output_formats: tuple[str, ...] = ("wav_22050",),
         stability: float = 0.45,

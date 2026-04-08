@@ -3,8 +3,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import re
+from typing import Any
 
-from proxy.audio.assets import choose_wake_sounds_dir, load_random_wake_audio
+from proxy.audio.assets import PcmAudio, choose_wake_sounds_dir, load_random_wake_audio
 from proxy.audio.io import AudioIO, list_input_devices
 from proxy.audio.playback import PlaybackEngine
 from proxy.audio.wake_vad import WakeVadEngine
@@ -90,7 +91,9 @@ async def _run() -> None:
     echo_filter = EchoFilter(similarity_threshold=settings.stt_deecho_similarity_threshold)
     orchestrator: Orchestrator | None = None
     tts_queue: asyncio.Queue[tuple[str | None, str | None, bool]] = asyncio.Queue(maxsize=64)
-    tts_task: asyncio.Task[None] | None = None
+    tts_playback_queue: asyncio.Queue[tuple[PcmAudio | None, str | None, bool]] = asyncio.Queue(maxsize=8)
+    tts_synth_task: asyncio.Task[None] | None = None
+    tts_play_task: asyncio.Task[None] | None = None
     tts_text_buffer = ""
     tts_partial_seen_since_final = False
     cancel_commands = _parse_cancel_commands(settings.cancel_commands)
@@ -199,17 +202,20 @@ async def _run() -> None:
             turn_timer.stamp("assistant_final")
             turn_timer.log_summary()
 
-    async def _tts_loop() -> None:
+    def _drain_queue(queue: asyncio.Queue[Any]) -> None:
+        while not queue.empty():
+            try:
+                queue.get_nowait()
+                queue.task_done()
+            except asyncio.QueueEmpty:
+                break
+
+    async def _tts_synth_loop() -> None:
         while True:
             text, turn_id, turn_done = await tts_queue.get()
             try:
                 if turn_done:
-                    await bus.publish(
-                        Event(
-                            type=EventType.ASSISTANT_AUDIO_DONE,
-                            turn_id=turn_id,
-                        )
-                    )
+                    await tts_playback_queue.put((None, turn_id, True))
                     continue
                 cleaned = (text or "").strip()
                 if not cleaned:
@@ -222,11 +228,29 @@ async def _run() -> None:
                 try:
                     audio = await tts.synthesize_text(cleaned)
                     if audio.data:
-                        await playback.play_pcm(audio)
+                        await tts_playback_queue.put((audio, turn_id, False))
                 except Exception as exc:
-                    logger.error("TTS synthesis/playback error: %s", exc)
+                    logger.error("TTS synthesis error: %s", exc)
             finally:
                 tts_queue.task_done()
+
+    async def _tts_playback_loop() -> None:
+        while True:
+            audio, turn_id, turn_done = await tts_playback_queue.get()
+            try:
+                if turn_done:
+                    await bus.publish(
+                        Event(
+                            type=EventType.ASSISTANT_AUDIO_DONE,
+                            turn_id=turn_id,
+                        )
+                    )
+                    continue
+                if audio is None or not audio.data:
+                    continue
+                await playback.play_pcm(audio)
+            finally:
+                tts_playback_queue.task_done()
 
     stt.on_partial(_on_partial)
     stt.on_final(_on_final)
@@ -275,7 +299,8 @@ async def _run() -> None:
         vanguard_narration_interval_s=settings.vanguard_narration_interval_s,
     )
     session_pool = SessionPool(bridge=copilot)
-    tts_task = asyncio.create_task(_tts_loop())
+    tts_synth_task = asyncio.create_task(_tts_synth_loop())
+    tts_play_task = asyncio.create_task(_tts_playback_loop())
 
     async def on_wake() -> None:
         nonlocal first_wake, turn_timer
@@ -298,16 +323,12 @@ async def _run() -> None:
         nonlocal tts_text_buffer, tts_partial_seen_since_final
         logger.info("Interrupt: cancelling copilot and TTS")
         await copilot.hard_stop_turn()
+        await tts.cancel()
         await playback.cancel()
         tts_text_buffer = ""
         tts_partial_seen_since_final = False
-        # Drain TTS queue
-        while not tts_queue.empty():
-            try:
-                tts_queue.get_nowait()
-                tts_queue.task_done()
-            except asyncio.QueueEmpty:
-                break
+        _drain_queue(tts_queue)
+        _drain_queue(tts_playback_queue)
 
     orchestrator = Orchestrator(bus, on_wake=on_wake, copilot_bridge=copilot, on_interrupt=on_interrupt, on_narration=_on_narration, vanguard=vanguard)
     orchestrator.set_listening_timeout(settings.listening_timeout_ms)
@@ -352,10 +373,16 @@ async def _run() -> None:
             await wake_vad.stop()
         await copilot.hard_stop()
         await tts.cancel()
-        if tts_task is not None and not tts_task.done():
-            tts_task.cancel()
+        if tts_synth_task is not None and not tts_synth_task.done():
+            tts_synth_task.cancel()
             try:
-                await tts_task
+                await tts_synth_task
+            except asyncio.CancelledError:
+                pass
+        if tts_play_task is not None and not tts_play_task.done():
+            tts_play_task.cancel()
+            try:
+                await tts_play_task
             except asyncio.CancelledError:
                 pass
         await playback.cancel()

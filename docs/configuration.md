@@ -31,8 +31,8 @@ All configuration is through environment variables. Proxy reads a `.env` file fr
 
 | Variable | Default | Description |
 |---|---|---|
-| `PROXY_ELEVENLABS_MODEL_ID` | `eleven_multilingual_v2` | TTS model |
-| `PROXY_ELEVENLABS_SPEED` | `0.95` | Speech speed multiplier |
+| `PROXY_ELEVENLABS_MODEL_ID` | `eleven_v3` | TTS model |
+| `PROXY_ELEVENLABS_SPEED` | `1.0` | Speech speed multiplier |
 
 ## Copilot
 
