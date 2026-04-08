@@ -40,8 +40,8 @@ class LocalModelClient:
     async def warmup(self) -> None:
         try:
             await asyncio.wait_for(
-                asyncio.to_thread(self._call_ollama, "Reply with OK.", "warmup"),
-                timeout=30.0,
+                asyncio.to_thread(self._call_ollama_raw, "Reply with OK.", "warmup", 30.0),
+                timeout=35.0,
             )
             _logger.info("Local model warmed up")
         except Exception as exc:
@@ -79,6 +79,9 @@ class LocalModelClient:
             return ""
 
     def _call_ollama(self, system: str, prompt: str) -> str:
+        return self._call_ollama_raw(system, prompt, self._timeout_s)
+
+    def _call_ollama_raw(self, system: str, prompt: str, timeout: float) -> str:
         payload = json.dumps({
             "model": self._model,
             "system": system,
@@ -91,6 +94,6 @@ class LocalModelClient:
             data=payload,
             headers={"Content-Type": "application/json"},
         )
-        resp = urlopen(req, timeout=self._timeout_s)
+        resp = urlopen(req, timeout=timeout)
         body = json.loads(resp.read())
         return str(body.get("response", "")).strip().strip('"')
