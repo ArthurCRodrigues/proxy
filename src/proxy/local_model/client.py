@@ -37,6 +37,16 @@ class LocalModelClient:
         self._model = model
         self._timeout_s = timeout_s
 
+    async def warmup(self) -> None:
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(self._call_ollama, "Reply with OK.", "warmup"),
+                timeout=30.0,
+            )
+            _logger.info("Local model warmed up")
+        except Exception as exc:
+            _logger.warning("Local model warmup failed: %s", exc)
+
     async def generate_latency_filler(self, user_prompt: str) -> str:
         return await self._generate(
             _FILLER_SYSTEM,
